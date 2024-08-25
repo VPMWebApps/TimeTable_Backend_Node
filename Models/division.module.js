@@ -5,6 +5,7 @@ const schema = new Schema(
   {
     division: {
       type: String,
+      required: [true, "Division is required"],
     },
   },
   {
@@ -14,6 +15,4 @@ const schema = new Schema(
 
 const Division = mongoose.models.Division || model("Division", schema);
 
-module.exports = {
-    Division
-}
+module.exports = Division;
