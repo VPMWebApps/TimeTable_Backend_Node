@@ -1,17 +1,20 @@
-const exp = require("express");
-const {
-  createLecture
-} = require("../Controllers/lecture.js");
+const exp = require('express');
+const router = exp.Router();
 const { isAuthenticated } = require("../MiddleWares/auth.js");
+const { 
+  getAllLectures,
+  createLecture,
+  getLectureById,
+  deleteLecture,
+  updateLecture
+} = require("../Controllers/lecture.js");
 
-const app = exp.Router();
+router.use(isAuthenticated);
 
-// After here user must be logged in to access the routes
+router.route('/all-lecture').get(getAllLectures);
+router.route('/create-lecture').post(createLecture);
+router.route('/lecture/:id').get(getLectureById)
+.delete(deleteLecture)
+.put(updateLecture);
 
-app.use(isAuthenticated);
-
-
-app.post("/lecture", createLecture);
-
-
-module.exports = app;
+module.exports = router;

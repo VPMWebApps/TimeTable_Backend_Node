@@ -6,7 +6,18 @@ const { TryCatch, ErrorHandler } = require("../Utils/utility");
 //Get each & every slot
 const getAllSlot = TryCatch(async (req, res, next) => {
 
-  const slots = await TimeSlot.find().populate('lecture');
+  const slots = await TimeSlot.find().populate({
+    path: 'lecture',
+    populate: [{ 
+      path: 'subject',
+    },{
+      path: 'professor',
+    },{
+      path: 'classroom',
+    },{
+      path: 'division',
+    }]
+  });
 
   if(!slots) return next(new ErrorHandler("No slots found", 404));
 
@@ -20,10 +31,10 @@ const getAllSlot = TryCatch(async (req, res, next) => {
 
 //create slot
 const createSlot = TryCatch(async (req, res, next) => {
-  const { slotType, startTime, endTime, lecture } = req.body;
+  const { slotType, day, startTime, endTime, lecture } = req.body;
 
   // Validate required fields
-  if (!slotType || !startTime || !endTime || !lecture) {
+  if (!slotType || !day || !startTime || !endTime || !lecture) {
     return res.status(400).json({
       success: false,
       message: "Please provide all required fields: slotType, startTime, endTime, and lecture."
@@ -43,6 +54,7 @@ const createSlot = TryCatch(async (req, res, next) => {
   // Create a new slot document
   const newSlot = new TimeSlot({
     slotType,
+    day,
     startTime,
     endTime,
     lecture // Assuming this is an ObjectId reference to the Lecture model
@@ -52,7 +64,18 @@ const createSlot = TryCatch(async (req, res, next) => {
   await newSlot.save();
 
   // Populate the lecture field in the response
-  const populatedSlot = await newSlot.populate('lecture');
+  const populatedSlot = await newSlot.populate({
+    path: 'lecture',
+    populate: [{ 
+      path: 'subject',
+    },{
+      path: 'professor',
+    },{
+      path: 'classroom',
+    },{
+      path: 'division',
+    }]
+  });
 
   res.status(201).json({
     success: true,
@@ -69,7 +92,19 @@ const getSlotById = TryCatch(async (req, res, next) => {
 
     if (!slotId)  return  next(new ErrorHandler("Slot ID is required", 400));
 
-    const slot = await TimeSlot.findById(slotId);
+    const slot = await TimeSlot.findById(slotId).populate({
+      path: 'lecture',
+      populate: [{ 
+        path: 'subject',
+      },{
+        path: 'professor',
+      },{
+        path: 'classroom',
+      },{
+        path: 'division',
+      }]
+    });
+
     if (!slot)  return  next(new ErrorHandler("Slot not found", 404));
 
     res.status(200).json({
@@ -103,16 +138,27 @@ const deleteSlot = TryCatch(async (req, res, next) => {
 const updateSlot = TryCatch(async (req, res, next) => {
 
     const slotId = req.params.id;
-    const { slotType, startTime, endTime, lecture } = req.body;
+    const { slotType, day, startTime, endTime, lecture } = req.body;
 
     // Validate the ObjectId format
     if (!mongoose.Types.ObjectId.isValid(slotId)) return  next(new ErrorHandler("Invalid slot ID format", 400));
 
     const updatedSlot = await TimeSlot.findByIdAndUpdate(
       slotId,
-      { slotType, startTime, endTime, lecture }, //value to be updated
+      { slotType, day, startTime, endTime, lecture }, //value to be updated
       { new: true, runValidators: true } //new: make sure value remains updated, rV:updated value is being cross verified with model
-    ).populate('lecture');
+    ).populate({
+      path: 'lecture',
+      populate: [{ 
+        path: 'subject',
+      },{
+        path: 'professor',
+      },{
+        path: 'classroom',
+      },{
+        path: 'division',
+      }]
+    });
 
     if (!updatedSlot) return  next(new ErrorHandler("TimeSlot not found", 404)); //if any issue during above operation, 404 err
 

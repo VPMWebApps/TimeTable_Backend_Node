@@ -6,7 +6,13 @@ const timeSlotSchema = new Schema(
   {
     slotType: {
       type: String,
-      required:[true, "Slot number is required"]
+      required:[true, "Slot number is required"],
+      enum: ["Break", "Lecture", "Practical"]
+    },
+    day: {
+      type: String,
+      required: [true, "Day required"],
+      enum: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
     },
     startTime:{
       type: String,

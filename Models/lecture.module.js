@@ -3,31 +3,27 @@ const mongoose = require("mongoose");
 
 const schema = new Schema(
   {
-    Subject: {
+    lectureType: {
+        type: String,
+        required: [true, "LectureType is required"],
+        enum: ["Theory", "Practical", "Guest Lecture"],
+    },
+    subject: {
         type: Schema.Types.ObjectId,
         ref: "Subject",
+        required: [true, "Subject is required"],
     },
-    Calendar: {
-        type: Schema.Types.ObjectId,
-        ref: "Calendar",
-    },
-    Classroom: {
+    classroom: {
         type: Schema.Types.ObjectId,
         ref: "Classroom",
+        required: [true, "Classroom is required"],
     },
-    Professor: { 
+    professor: { 
         type: Schema.Types.ObjectId, 
         ref: "Professor",
+        required: [true, "Professor is required"],
     },
-    Slot: {
-        type: Schema.Types.ObjectId,
-        ref: "Slot",
-    },
-    Batch: {
-        type: Schema.Types.ObjectId,
-        ref: "Batch",
-    },
-    Division: {
+    division: {
         type: Schema.Types.ObjectId,
         ref: "Division",
     },

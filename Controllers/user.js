@@ -1,6 +1,5 @@
 const {compare} = require('bcrypt')
 const { TryCatch } = require('../Utils/utility');
-const {APP_TOKEN} = require('../Config/config.js');
 const {
     cookieOptions,
     sendToken
@@ -12,6 +11,9 @@ const {User} = require("../Models/user.module.js");
 const newUser = TryCatch(async (req, res, next) => {
     const { name, phone, email, batch, year, password } = req.body;
   
+    console.log(req);
+    
+
     const user = await User.create({
       name,
       phone,
@@ -43,7 +45,7 @@ const newUser = TryCatch(async (req, res, next) => {
   const logout = TryCatch(async (req, res) => {
     return res
       .status(200)
-      .cookie(APP_TOKEN, "", { ...cookieOptions, maxAge: 0 })
+      .cookie("time-table-app-token", "", { ...cookieOptions, maxAge: 0 })
       .json({
         success: true,
         message: "Logged out successfully",
