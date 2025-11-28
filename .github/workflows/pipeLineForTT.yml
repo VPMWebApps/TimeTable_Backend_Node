@@ -1,4 +1,4 @@
-name: Deploy Backend to Render
+name: Build & Deploy Backend to Render
 
 on:
   push:
@@ -10,10 +10,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Step 1: Checkout the repo
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Step 2: Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      # Step 3: Install backend dependencies
+      - name: Install dependencies
+        run: npm ci
+
+      # Step 4: Trigger deployment on Render
       - name: Trigger Render Deployment
         run: |
           curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK }}
-          echo "Deployment triggered successfully."
-      - name: Notify Deployment Status
-        run: |
-          echo "Deployment has been triggered for branch Nirav#05-new_apis_added."

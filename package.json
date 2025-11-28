@@ -3,11 +3,10 @@
   "version": "1.0.0",
   "description": "This project is for managing and centralizing the work load of time table and meetings of VPM's RZ Shah College.",
   "main": "app.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node app.js",
-    "dev": "nodemon app.js"
-  },
+   "scripts": {
+    "start": "node app.js",      
+  "dev": "nodemon app.js"      
+},
   "author": "",
   "license": "ISC",
   "devDependencies": {
