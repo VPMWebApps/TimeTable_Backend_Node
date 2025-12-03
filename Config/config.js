@@ -1,6 +1,5 @@
 const mongoose = require('mongoose')
-
-console.log("CORS CLIENT_URL:", process.env.CLIENT_URL);
+require('dotenv').config();
 
 const corsOptions = {
     origin: [

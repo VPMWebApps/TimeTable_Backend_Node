@@ -32,7 +32,6 @@ require('dotenv').config({
     path: './.env',
 });
 
-
 // const mongoURI = process.env.MONGO_URI;
 const port = process.env.PORT || 8000;
 const envMode = process.env.NODE_ENV ? process.env.NODE_ENV.trim() : "PRODUCTION";
@@ -44,8 +43,6 @@ app.use(cors(corsOptions));
 //routes
 app.get('/', (req, res)=>{
     res.send('Node Server is working...');
-    console.log(process.env.CLIENT_URL);
-    
 })
 
 app.use('/api/v1/test', test);
