@@ -5,8 +5,9 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const authRoutes = require("./routes/authRoutes/authRoutes");
 const AdminEventRoutes = require("./routes/adminRoutes/AdminEventRoutes");
+const AdminJobRoutes = require("./routes/adminRoutes/AdminJobRoutes");
 const UserEventRoutes = require("./routes/UserRoutes/UserEventRoutes");
-
+const UserJobRoutes = require("./routes/UserRoutes/UserJobRoutes");
 dotenv.config();
 
 const app = express();
@@ -35,9 +36,16 @@ app.use(cookieParser());
 app.use(express.json());
 
 
+//auth
 app.use("/api/auth", authRoutes);
+
+//admin
 app.use("/api/admin/events", AdminEventRoutes);
+app.use("/api/admin/jobs", AdminJobRoutes);
+
+//user
 app.use("/api/user/events", UserEventRoutes);
+app.use("/api/user/jobs",UserJobRoutes)
 
 
 const PORT = process.env.PORT || 5000;
