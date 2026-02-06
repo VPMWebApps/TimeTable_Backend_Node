@@ -74,13 +74,14 @@ exports.loginUser = async (req, res) => {
       { expiresIn: "1d" }
     );
 
-    res
-      .cookie("token", token, {
-        httpOnly: true,
-        secure: true, // 🚀 Required on HTTPS / Render
-        sameSite: "none", // 🚀 Required for cross-site cookies
-        maxAge: 24 * 60 * 60 * 1000,
-      })
+    const isProduction = process.env.NODE_ENV === "production";
+
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: false,        // ✅ false locally, true on HTTPS
+      sameSite: isProduction ? "none" : "lax",
+      maxAge: 24 * 60 * 60 * 1000,
+    })
       .json({
         success: true,
         message: "Logged in successfully",
@@ -103,10 +104,10 @@ exports.loginUser = async (req, res) => {
 // LOGOUT
 exports.logout = (req, res) => {
   res.clearCookie("token", {
-    httpOnly: true,
-    secure: true,
-    sameSite: "none",
-  }).json({
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? "none" : "lax",
+}).json({
     success: true,
     message: "Logout successfully!",
   });
@@ -115,6 +116,7 @@ exports.logout = (req, res) => {
 // AUTH MIDDLEWARE
 exports.authMiddleware = async (req, res, next) => {
   const token = req.cookies.token;
+
   if (!token) {
     return res.status(401).json({
       success: false,
@@ -123,12 +125,23 @@ exports.authMiddleware = async (req, res, next) => {
   }
 
   try {
-    const decode = jwt.verify(token, process.env.CLIENT_SECRET_KEY);
+    const decoded = jwt.verify(token, process.env.CLIENT_SECRET_KEY);
 
-    req.user = decode;
+    const user = await User.findById(decoded.id).select(
+      "_id name email department graduationYear role username"
+    );
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    req.user = user; // 🔥 FULL USER OBJECT
     next();
   } catch (error) {
-    res.status(401).json({
+    return res.status(401).json({
       success: false,
       message: "Unauthorized access",
     });

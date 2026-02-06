@@ -5,7 +5,7 @@ const {
   logout,
   authMiddleware,
   checkAuth,
-} = require("../../controllers/auth/authenticationController");
+} = require("../../controllers/auth/authController");
 
 const router = express.Router();
 
@@ -14,5 +14,12 @@ router.post("/login", loginUser);
 router.delete("/logout", logout);
 
 router.get("/checkAuth", authMiddleware, checkAuth);
+
+router.get("/test-auth",authMiddleware, (req, res) => {
+  res.json({
+    cookies: req.cookies,
+    user: req.user || null
+  });
+});
 
 module.exports = router;

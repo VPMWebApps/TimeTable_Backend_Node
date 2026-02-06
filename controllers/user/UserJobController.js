@@ -3,28 +3,50 @@ const Job = require("../../models/Job.models");
 
 exports.createJob = async (req, res) => {
   try {
+
+    console.log("USER:", req.user);
+
+
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
     const user = req.user;
+
 
     const job = await Job.create({
       ...req.body,
       status: "pending",
       postedBy: {
         alumniId: user._id,
-        name: user.name,
+        name: user.username,
         email: user.email,
-        department: user.department,
-        graduationYear: user.graduationYear,
-      },
+        role: user.role
+      }
     });
 
-    res.status(201).json({
+
+    return res.status(201).json({
       success: true,
       message: "Job submitted for admin approval",
       data: job,
     });
   } catch (error) {
     console.error("Alumni create job error:", error);
-    res.status(500).json({
+
+    // 🧠 Handle mongoose validation errors cleanly
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid job data",
+        errors: Object.values(error.errors).map((e) => e.message),
+      });
+    }
+
+    return res.status(500).json({
       success: false,
       message: "Unable to submit job",
     });
@@ -75,7 +97,7 @@ exports.getPublicJobs = async (req, res) => {
       pagination: {
         total,
         page: Number(page),
-        pages: Math.ceil(total / limit),
+        pages: Math.ceil(total / Number(limit)),
       },
     });
   } catch (error) {
