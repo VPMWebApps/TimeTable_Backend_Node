@@ -44,68 +44,64 @@ const JobSchema = new mongoose.Schema(
     },
 
     location: {
-      city: {
-        type: String,
-        trim: true,
-        index: true,
-      },
-      state: {
-        type: String,
-        trim: true,
-      },
-      country: {
-        type: String,
-        default: "India",
-      },
+      city: { type: String, required: true, trim: true, index: true },
+      state: { type: String, trim: true },
+      country: { type: String, default: "India", required: true },
     },
 
     salary: {
-      disclosed: {
-        type: Boolean,
-        default: false,
-      },
-      min: {
-        type: Number,
-      },
-      max: {
-        type: Number,
-      },
+      disclosed: { type: Boolean, default: false },
+      min: Number,
+      max: Number,
     },
-
-    /* ===== SYSTEM FIELDS ===== */
 
     status: {
       type: String,
-      enum: ["draft", "pending", "approved", "rejected", "expired", "closed"],
-      default: "draft",
+      enum: ["pending", "approved", "rejected", "expired", "closed"],
+      default: "pending",
       index: true,
     },
 
+    // ✅ FIXED: matches User model exactly
     postedBy: {
-      alumniId: {
+      userId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
         required: true,
         index: true,
       },
-      name: String,
-      email: String,
-      department: String,
-      graduationYear: Number,
+      username: { type: String, required: true },
+      email: { type: String, required: true },
+      stream: { type: String, required: true },
+      batch: {
+        type: String,
+        required: true,
+        match: [/^[0-9]{4}$/, "Invalid batch year"],
+      },
     },
   },
-  {
-    timestamps: true,
-    versionKey: false,
-  }
+  { timestamps: true, versionKey: false }
 );
 
-/* ===== COMPOUND INDEXES FOR LISTING PERFORMANCE ===== */
+/* ================= SALARY CONSISTENCY ================= */
 
-// Most common user query: approved jobs, newest first
+JobSchema.pre("validate", function (next) {
+  if (!this.salary?.disclosed) {
+    this.salary.min = undefined;
+    this.salary.max = undefined;
+  } else if (
+    this.salary.min != null &&
+    this.salary.max != null &&
+    this.salary.min > this.salary.max
+  ) {
+    return next(new Error("Salary min cannot exceed max"));
+  }
+  next();
+});
+
+/* ================= INDEXES ================= */
+
 JobSchema.index({ status: 1, createdAt: -1 });
-
-// Alumni dashboard
-JobSchema.index({ "postedBy.alumniId": 1, createdAt: -1 });
+JobSchema.index({ "postedBy.userId": 1, createdAt: -1 });
 
 module.exports = mongoose.model("Job", JobSchema);

@@ -1,107 +1,130 @@
-// controllers/user/job.controller.js
 const Job = require("../../models/Job.models");
 
 exports.createJob = async (req, res) => {
   try {
-
-    console.log("USER:", req.user);
-
-
-    if (!req.user) {
-      return res.status(401).json({
+    // anyone except admin
+    if (!req.user || req.user.role === "admin") {
+      return res.status(403).json({
         success: false,
-        message: "Authentication required",
+        message: "Only users can post jobs",
       });
     }
 
-    const user = req.user;
+    const {
+      title,
+      companyName,
+      employmentType,
+      workMode,
+      experienceLevel,
+      openings = 1,
+      location,
+      salary,
+    } = req.body;
 
+    if (
+      !title ||
+      !companyName ||
+      !employmentType ||
+      !workMode ||
+      !experienceLevel
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required job fields",
+      });
+    }
+
+    if (!location?.city) {
+      return res.status(400).json({
+        success: false,
+        message: "City is required",
+      });
+    }
 
     const job = await Job.create({
-      ...req.body,
+      title,
+      companyName,
+      employmentType,
+      workMode,
+      experienceLevel,
+      openings,
+      location,
+      salary,
       status: "pending",
+
+      // ✅ MUST match Job schema exactly
       postedBy: {
-        alumniId: user._id,
-        name: user.username,
-        email: user.email,
-        role: user.role
-      }
+        userId: req.user._id,
+        username: req.user.username,
+        email: req.user.email,
+        stream: req.user.stream,
+        batch: req.user.batch,
+      },
     });
 
-
-    return res.status(201).json({
+    res.status(201).json({
       success: true,
       message: "Job submitted for admin approval",
       data: job,
     });
-  } catch (error) {
-    console.error("Alumni create job error:", error);
-
-    // 🧠 Handle mongoose validation errors cleanly
-    if (error.name === "ValidationError") {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid job data",
-        errors: Object.values(error.errors).map((e) => e.message),
-      });
-    }
-
-    return res.status(500).json({
+  } catch (err) {
+    res.status(400).json({
       success: false,
-      message: "Unable to submit job",
+      message: err.message || "Failed to create job",
     });
   }
 };
 
+
+
 exports.getPublicJobs = async (req, res) => {
   try {
-    const {
-      page = 1,
-      limit = 10,
-      employmentType,
-      workMode,
-      experienceLevel,
-      city,
-      search,
-    } = req.query;
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.min(Number(req.query.limit) || 10, 50);
 
-    const filter = { status: "approved" }; // 🔐 backend enforcement
+    const query = { status: "approved" };
 
-    if (employmentType) filter.employmentType = employmentType;
-    if (workMode) filter.workMode = workMode;
-    if (experienceLevel) filter.experienceLevel = experienceLevel;
-    if (city) filter["location.city"] = city;
+    if (req.query.employmentType)
+      query.employmentType = req.query.employmentType;
 
-    if (search) {
-      filter.$or = [
-        { title: { $regex: search, $options: "i" } },
-        { companyName: { $regex: search, $options: "i" } },
+    if (req.query.workMode)
+      query.workMode = req.query.workMode;
+
+    if (req.query.experienceLevel)
+      query.experienceLevel = req.query.experienceLevel;
+
+    if (req.query.city)
+      query["location.city"] = new RegExp(req.query.city, "i");
+
+    if (req.query.search) {
+      query.$or = [
+        { title: new RegExp(req.query.search, "i") },
+        { companyName: new RegExp(req.query.search, "i") },
       ];
     }
 
-    const skip = (Number(page) - 1) * Number(limit);
-
     const [jobs, total] = await Promise.all([
-      Job.find(filter)
+      Job.find(query)
+        .select(
+          "title companyName employmentType workMode experienceLevel location salary openings createdAt postedBy.name"
+        )
         .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(Number(limit))
+        .skip((page - 1) * limit)
+        .limit(limit)
         .lean(),
-
-      Job.countDocuments(filter),
+      Job.countDocuments(query),
     ]);
 
-    res.status(200).json({
+    res.json({
       success: true,
       data: jobs,
       pagination: {
         total,
-        page: Number(page),
-        pages: Math.ceil(total / Number(limit)),
+        page,
+        pages: Math.ceil(total / limit),
       },
     });
-  } catch (error) {
-    console.error("Public jobs error:", error);
+  } catch {
     res.status(500).json({
       success: false,
       message: "Failed to fetch jobs",

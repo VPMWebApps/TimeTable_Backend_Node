@@ -74,12 +74,13 @@ exports.loginUser = async (req, res) => {
       { expiresIn: "1d" }
     );
 
-    const isProduction = process.env.NODE_ENV === "production";
+    // const isProduction = process.env.NODE_ENV === "production";
 
     res.cookie("token", token, {
       httpOnly: true,
       secure: false,        // ✅ false locally, true on HTTPS
-      sameSite: isProduction ? "none" : "lax",
+      // sameSite: isProduction ? "none" : "lax",
+      sameSite:"lax",
       maxAge: 24 * 60 * 60 * 1000,
     })
       .json({
@@ -105,8 +106,8 @@ exports.loginUser = async (req, res) => {
 exports.logout = (req, res) => {
   res.clearCookie("token", {
   httpOnly: true,
-  secure: isProduction,
-  sameSite: isProduction ? "none" : "lax",
+  secure: false,
+  sameSite: "lax",
 }).json({
     success: true,
     message: "Logout successfully!",
@@ -127,9 +128,8 @@ exports.authMiddleware = async (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.CLIENT_SECRET_KEY);
 
-    const user = await User.findById(decoded.id).select(
-      "_id name email department graduationYear role username"
-    );
+    const user = await User.findById(decoded.id).select("_id fullname username email stream batch role");
+
 
     if (!user) {
       return res.status(401).json({
