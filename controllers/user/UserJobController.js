@@ -1,6 +1,8 @@
 const Job = require("../../models/Job.models");
 
 exports.createJob = async (req, res) => {
+
+console.log("JOB FROM DB 👉", Job);
   try {
     // anyone except admin
     if (!req.user || req.user.role === "admin") {
@@ -79,6 +81,9 @@ exports.createJob = async (req, res) => {
 
 exports.getPublicJobs = async (req, res) => {
   try {
+
+    console.log("JOB FROM DB 👉", Job);
+
     const page = Math.max(Number(req.query.page) || 1, 1);
     const limit = Math.min(Number(req.query.limit) || 10, 50);
 
@@ -106,7 +111,7 @@ exports.getPublicJobs = async (req, res) => {
     const [jobs, total] = await Promise.all([
       Job.find(query)
         .select(
-          "title companyName employmentType workMode experienceLevel location salary openings createdAt postedBy.name"
+          "title companyName employmentType workMode experienceLevel location salary openings createdAt postedBy"
         )
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)

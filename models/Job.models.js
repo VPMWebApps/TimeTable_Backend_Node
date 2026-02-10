@@ -79,6 +79,8 @@ const JobSchema = new mongoose.Schema(
         match: [/^[0-9]{4}$/, "Invalid batch year"],
       },
     },
+    
+    
   },
   { timestamps: true, versionKey: false }
 );
@@ -103,5 +105,12 @@ JobSchema.pre("validate", function (next) {
 
 JobSchema.index({ status: 1, createdAt: -1 });
 JobSchema.index({ "postedBy.userId": 1, createdAt: -1 });
+JobSchema.index({
+  title: "text",
+  companyName: "text",
+  "postedBy.username": "text",
+  "postedBy.email": "text",
+});
+
 
 module.exports = mongoose.model("Job", JobSchema);

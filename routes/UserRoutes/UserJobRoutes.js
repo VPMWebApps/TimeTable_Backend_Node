@@ -5,7 +5,7 @@ const { authMiddleware } = require("../../controllers/auth/authController");
 
 
 router.post("/alumni/jobs/create",authMiddleware, createJob  );
-router.get("/alumni/jobs/get", getPublicJobs);
+router.get("/alumni/jobs/get", authMiddleware,getPublicJobs);
 
 
 module.exports = router;

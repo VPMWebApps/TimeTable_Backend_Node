@@ -14,6 +14,8 @@ const getFilteredEvents = async (req, res) => {
       status,
     } = req.query;
 
+    console.log("🔍 Filter params received:", { filter, category, isVirtual, status });
+
     let page = parseInt(req.query.page) || 1;
     let limit = parseInt(req.query.limit) || 10;
     let skip = (page - 1) * limit;
@@ -30,15 +32,19 @@ const getFilteredEvents = async (req, res) => {
 
     /* ---------- CATEGORY ---------- */
     if (category && category !== "all") {
-query.category = new RegExp(`^${category}$`, "i");
+      query.category = new RegExp(`^${category}$`, "i");
     }
 
-    /* ---------- EVENT MODE ---------- */
-    if (isVirtual === "true") {
-      query.isVirtual = true;
-    }
-    if (isVirtual === "false") {
-      query.isVirtual = false;
+    /* ---------- EVENT MODE (FIXED) ---------- */
+    if (isVirtual !== undefined && isVirtual !== "all") {
+      // Convert string to boolean properly
+      if (isVirtual === "true" || isVirtual === true) {
+        query.isVirtual = true;
+        console.log("✅ Filtering for VIRTUAL events");
+      } else if (isVirtual === "false" || isVirtual === false) {
+        query.isVirtual = false;
+        console.log("✅ Filtering for PHYSICAL events");
+      }
     }
 
     /* ---------- STATUS ---------- */
@@ -79,6 +85,8 @@ query.category = new RegExp(`^${category}$`, "i");
       query.date = dateQuery;
     }
 
+    console.log("📊 Final MongoDB query:", JSON.stringify(query, null, 2));
+
     /* ---------- QUERY DB ---------- */
     const totalEvents = await Event.countDocuments(query);
 
@@ -86,6 +94,8 @@ query.category = new RegExp(`^${category}$`, "i");
       .sort({ date: 1 })
       .skip(skip)
       .limit(limit);
+
+    console.log(`✅ Found ${events.length} events out of ${totalEvents} total`);
 
     res.status(200).json({
       success: true,
@@ -95,7 +105,7 @@ query.category = new RegExp(`^${category}$`, "i");
       totalEvents,
     });
   } catch (err) {
-    console.error(err);
+    console.error("❌ Error in getFilteredEvents:", err);
     res.status(500).json({
       success: false,
       message: "Failed to fetch events",
@@ -131,7 +141,6 @@ const getEventDetails = async (req, res) => {
 
 const registerForEvent = async (req, res) => {
   try {
-
     console.log("📝 Registration request:", { eventId: req.params.eventId, body: req.body });
 
     const { eventId } = req.params;
