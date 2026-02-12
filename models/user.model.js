@@ -47,9 +47,16 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "user",
     },
+    lastLoginAt: {
+      type: Date,
+    }
   },
+    
   { timestamps: true }
 );
+
+userSchema.index({ fullname: "text", username: "text", stream: "text" });
+
 
 const User = mongoose.model("User", userSchema);
 

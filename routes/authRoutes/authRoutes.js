@@ -5,6 +5,7 @@ const {
   logout,
   authMiddleware,
   checkAuth,
+  getAllAlumni,
 } = require("../../controllers/auth/authController");
 
 const router = express.Router();
@@ -21,5 +22,8 @@ router.get("/test-auth",authMiddleware, (req, res) => {
     user: req.user || null
   });
 });
+
+router.get("/alumni", authMiddleware, getAllAlumni);
+
 
 module.exports = router;

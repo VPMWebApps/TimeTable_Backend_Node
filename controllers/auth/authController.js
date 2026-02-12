@@ -2,105 +2,258 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const User = require("../../models/user.model");
 
-// REGISTER
+
 exports.registerUser = async (req, res) => {
   const { fullname, username, batch, stream, phoneno, email, password } =
     req.body;
 
   try {
-    const checkUser = await User.findOne({ email });
+    const normalizedEmail = email.toLowerCase().trim();
 
+    const checkUser = await User.findOne({ email: normalizedEmail });
     if (checkUser) {
-      return res.json({ success: false, message: "User already exists" });
+      return res.status(409).json({
+        success: false,
+        message: "User already exists",
+      });
     }
 
     const hashPassword = await bcrypt.hash(password, 12);
 
     const newUser = new User({
-      username,
       fullname,
+      username,
       batch,
       stream,
       phoneno,
-      email,
+      email: normalizedEmail,
       password: hashPassword,
     });
 
     await newUser.save();
 
-    res.status(200).json({
+    res.status(201).json({
       success: true,
-      message: "Registration Successful!!!",
+      message: "Registration Successful",
     });
   } catch (err) {
-    console.log(err);
+    console.error(err);
     res.status(500).json({
       success: false,
-      message: "Some error occurred",
+      message: "Server error",
     });
   }
 };
 
-// LOGIN
 exports.loginUser = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    const checkUser = await User.findOne({ email });
-    if (!checkUser)
-      return res.json({
-        success: false,
-        message: "User doesn't exist! Please register first",
-      });
+    const normalizedEmail = email.toLowerCase().trim();
 
-    const checkPasswordMatch = await bcrypt.compare(
-      password,
-      checkUser.password
+    const checkUser = await User.findOne({ email: normalizedEmail }).select(
+      "+password"
     );
-    if (!checkPasswordMatch)
-      return res.json({
+
+    if (!checkUser) {
+      return res.status(404).json({
         success: false,
-        message: "Incorrect password! Please try again",
+        message: "User doesn't exist",
       });
+    }
+
+    const match = await bcrypt.compare(password, checkUser.password);
+
+    if (!match) {
+      return res.status(401).json({
+        success: false,
+        message: "Incorrect password",
+      });
+    }
+
+    // ✅ Track login
+    checkUser.lastLoginAt = new Date();
+    checkUser.loginCount += 1;
+    await checkUser.save();
 
     const token = jwt.sign(
       {
         id: checkUser._id,
         role: checkUser.role,
-        email: checkUser.email,
-        username: checkUser.username,
       },
-      process.env.CLIENT_SECRET_KEY, // use env variable
+      process.env.CLIENT_SECRET_KEY,
       { expiresIn: "1d" }
     );
 
-    // const isProduction = process.env.NODE_ENV === "production";
-
     res.cookie("token", token, {
       httpOnly: true,
-      secure: false,        // ✅ false locally, true on HTTPS
-      // sameSite: isProduction ? "none" : "lax",
-      sameSite:"lax",
+      secure: false,
+      sameSite: "lax",
       maxAge: 24 * 60 * 60 * 1000,
-    })
-      .json({
-        success: true,
-        message: "Logged in successfully",
-        user: {
-          email: checkUser.email,
-          role: checkUser.role,
-          id: checkUser._id,
-          username: checkUser.username,
-        },
-      });
+    }).json({
+      success: true,
+      message: "Logged in successfully",
+      user: {
+        id: checkUser._id,
+        email: checkUser.email,
+        role: checkUser.role,
+        username: checkUser.username,
+      },
+    });
   } catch (err) {
-    console.log(err);
+    console.error(err);
     res.status(500).json({
       success: false,
-      message: "Some error occurred",
+      message: "Server error",
     });
   }
 };
+
+exports.getAllAlumni = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const search = req.query.search || "";
+    const onlyLoggedIn = req.query.loggedIn === "true";
+
+    const skip = (page - 1) * limit;
+
+    const filter = { role: "user" };
+
+    // Optional: only users who logged in at least once
+    if (onlyLoggedIn) {
+      filter.loginCount = { $gt: 0 };
+    }
+
+    if (search) {
+      filter.$text = { $search: search };
+    }
+
+    const users = await User.find(filter)
+      .select(
+        "fullname username batch stream email phoneno lastLoginAt loginCount createdAt"
+      )
+      .skip(skip)
+      .limit(limit)
+      .sort({ createdAt: -1 });
+
+    const total = await User.countDocuments(filter);
+
+    res.status(200).json({
+      success: true,
+      currentPage: page,
+      totalPages: Math.ceil(total / limit),
+      totalUsers: total,
+      data: users,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch alumni",
+    });
+  }
+};
+
+// REGISTER
+// exports.registerUser = async (req, res) => {
+//   const { fullname, username, batch, stream, phoneno, email, password } =
+//     req.body;
+
+//   try {
+//     const checkUser = await User.findOne({ email });
+
+//     if (checkUser) {
+//       return res.json({ success: false, message: "User already exists" });
+//     }
+
+//     const hashPassword = await bcrypt.hash(password, 12);
+
+//     const newUser = new User({
+//       username,
+//       fullname,
+//       batch,
+//       stream,
+//       phoneno,
+//       email,
+//       password: hashPassword,
+//     });
+
+//     await newUser.save();
+
+//     res.status(200).json({
+//       success: true,
+//       message: "Registration Successful!!!",
+//     });
+//   } catch (err) {
+//     console.log(err);
+//     res.status(500).json({
+//       success: false,
+//       message: "Some error occurred",
+//     });
+//   }
+// };
+
+// LOGIN
+// exports.loginUser = async (req, res) => {
+//   const { email, password } = req.body;
+
+//   try {
+//     const checkUser = await User.findOne({ email });
+//     if (!checkUser)
+//       return res.json({
+//         success: false,
+//         message: "User doesn't exist! Please register first",
+//       });
+
+//     const checkPasswordMatch = await bcrypt.compare(
+//       password,
+//       checkUser.password
+//     );
+//     if (!checkPasswordMatch)
+//       return res.json({
+//         success: false,
+//         message: "Incorrect password! Please try again",
+//       });
+
+//     const token = jwt.sign(
+//       {
+//         id: checkUser._id,
+//         role: checkUser.role,
+//         email: checkUser.email,
+//         username: checkUser.username,
+//       },
+//       process.env.CLIENT_SECRET_KEY, // use env variable
+//       { expiresIn: "1d" }
+//     );
+
+//     // const isProduction = process.env.NODE_ENV === "production";
+
+//     res.cookie("token", token, {
+//       httpOnly: true,
+//       secure: false,        // ✅ false locally, true on HTTPS
+//       // sameSite: isProduction ? "none" : "lax",
+//       sameSite:"lax",
+//       maxAge: 24 * 60 * 60 * 1000,
+//     })
+//       .json({
+//         success: true,
+//         message: "Logged in successfully",
+//         user: {
+//           email: checkUser.email,
+//           role: checkUser.role,
+//           id: checkUser._id,
+//           username: checkUser.username,
+//         },
+//       });
+//   } catch (err) {
+//     console.log(err);
+//     res.status(500).json({
+//       success: false,
+//       message: "Some error occurred",
+//     });
+//   }
+// };
 
 // LOGOUT
 exports.logout = (req, res) => {
