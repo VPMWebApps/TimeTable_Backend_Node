@@ -2,7 +2,7 @@ const Job = require("../../models/Job.models");
 
 exports.createJob = async (req, res) => {
 
-console.log("JOB FROM DB 👉", Job);
+  console.log("JOB FROM DB 👉", Job);
   try {
     // anyone except admin
     if (!req.user || req.user.role === "admin") {
@@ -61,6 +61,8 @@ console.log("JOB FROM DB 👉", Job);
         email: req.user.email,
         stream: req.user.stream,
         batch: req.user.batch,
+        role:  req.user.role || "Alumni", // ✅ ADD THIS
+
       },
     });
 

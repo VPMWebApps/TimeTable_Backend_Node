@@ -61,8 +61,6 @@ const JobSchema = new mongoose.Schema(
       default: "pending",
       index: true,
     },
-
-    // ✅ FIXED: matches User model exactly
     postedBy: {
       userId: {
         type: mongoose.Schema.Types.ObjectId,
@@ -78,9 +76,12 @@ const JobSchema = new mongoose.Schema(
         required: true,
         match: [/^[0-9]{4}$/, "Invalid batch year"],
       },
+      role: {
+         type: String,
+         enum: ["user", "admin"],
+         required: true 
+        }, 
     },
-    
-    
   },
   { timestamps: true, versionKey: false }
 );

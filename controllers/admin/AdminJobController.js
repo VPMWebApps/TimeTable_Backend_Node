@@ -246,6 +246,7 @@ exports.createJobAsAdmin = async (req, res) => {
         email: req.user.email,
         stream: req.user.stream || "Admin",
         batch: req.user.batch || "N/A",
+        role: "admin", 
       },
     });
 
