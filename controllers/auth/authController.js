@@ -1,6 +1,7 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const User = require("../../models/user.model");
+const UserInfo = require("../../models/UserInfo.model");
 
 
 exports.registerUser = async (req, res) => {
@@ -17,14 +18,22 @@ exports.registerUser = async (req, res) => {
         message: "User already exists",
       });
     }
+    
+    const academic = await Academic.findById(req.body.academic);
+
+    if (!academic || !academic.isActive) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid academic selection",
+      });
+    }
 
     const hashPassword = await bcrypt.hash(password, 12);
 
     const newUser = new User({
       fullname,
       username,
-      batch,
-      stream,
+      academic: "academicObjectId",
       phoneno,
       email: normalizedEmail,
       password: hashPassword,
@@ -111,24 +120,47 @@ exports.loginUser = async (req, res) => {
 
 exports.getAllAlumni = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const search = req.query.search || "";
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const search = req.query.search?.trim() || "";
     const onlyLoggedIn = req.query.loggedIn === "true";
-
+    const batch = req.query.batch?.trim();
+    const stream = req.query.stream?.trim();
     const skip = (page - 1) * limit;
 
+    /* =========================
+       BUILD FILTER OBJECT
+    ========================= */
     const filter = { role: "user" };
 
-    // Optional: only users who logged in at least once
     if (onlyLoggedIn) {
       filter.loginCount = { $gt: 0 };
     }
 
+    // Batch filter (strict 4 digit match)
+    if (batch) {
+      if (!/^[0-9]{4}$/.test(batch)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid batch format",
+        });
+      }
+      filter.batch = batch;
+    }
+
+    // Stream filter (case-insensitive exact match)
+    if (stream) {
+      filter.stream = { $regex: `^${stream}$`, $options: "i" };
+    }
+
+    // Text search (must be last to avoid accidental override)
     if (search) {
       filter.$text = { $search: search };
     }
 
+    /* =========================
+       FETCH USERS
+    ========================= */
     const users = await User.find(filter)
       .select(
         "fullname username batch stream email phoneno lastLoginAt loginCount createdAt"
@@ -139,21 +171,195 @@ exports.getAllAlumni = async (req, res) => {
 
     const total = await User.countDocuments(filter);
 
+    /* =========================
+       FETCH PROFILES
+    ========================= */
+    const userIds = users.map((u) => u._id);
+    const profiles = await UserInfo.find({
+      user: { $in: userIds },
+    }).select("user linkedin jobTitle profilePicture company");
+
+    const profileMap = {};
+    profiles.forEach((profile) => {
+      profileMap[profile.user.toString()] = profile;
+    });
+
+    const enrichedUsers = users.map((user) => {
+      const profile = profileMap[user._id.toString()];
+      return {
+        ...user.toObject(),
+        jobTitle: profile?.jobTitle || "",
+        linkedin: profile?.linkedin || "",
+        profilePicture: profile?.profilePicture || "",
+        company: profile?.company || "",
+      };
+    });
+
+    /* =========================
+       RESPONSE
+    ========================= */
     res.status(200).json({
       success: true,
       currentPage: page,
       totalPages: Math.ceil(total / limit),
       totalUsers: total,
-      data: users,
+      data: enrichedUsers,
     });
   } catch (error) {
-    console.error(error);
+    console.error("getAllAlumni error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch alumni",
     });
   }
 };
+
+// exports.getAllAlumni = async (req, res) => {
+//   try {
+//     const page = Math.max(parseInt(req.query.page) || 1, 1);
+//     const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+
+//     const search = req.query.search?.trim() || "";
+//     const onlyLoggedIn = req.query.loggedIn === "true";
+
+//     const batch = req.query.batch?.trim();
+//     const stream = req.query.stream?.trim();
+
+//     const skip = (page - 1) * limit;
+
+//     /* =========================
+//        BUILD FILTER OBJECT
+//     ========================= */
+//     const filter = { role: "user" };
+
+//     if (onlyLoggedIn) {
+//       filter.loginCount = { $gt: 0 };
+//     }
+
+//     // Batch filter (strict 4 digit match)
+//     if (batch) {
+//       if (!/^[0-9]{4}$/.test(batch)) {
+//         return res.status(400).json({
+//           success: false,
+//           message: "Invalid batch format",
+//         });
+//       }
+//       filter.batch = batch;
+//     }
+
+//     // Stream filter (case-insensitive exact match)
+//     if (stream) {
+//       filter.stream = { $regex: `^${stream}$`, $options: "i" };
+//     }
+
+//     // Text search (must be last to avoid accidental override)
+//     if (search) {
+//       filter.$text = { $search: search };
+//     }
+
+//     /* =========================
+//        FETCH USERS
+//     ========================= */
+//     const users = await User.find(filter)
+//       .select(
+//         "fullname username batch stream email phoneno lastLoginAt loginCount createdAt"
+//       )
+//       .skip(skip)
+//       .limit(limit)
+//       .sort({ createdAt: -1 });
+
+//     const total = await User.countDocuments(filter);
+
+//     /* =========================
+//        FETCH PROFILES
+//     ========================= */
+//     const userIds = users.map((u) => u._id);
+
+//     const profiles = await UserInfo.find({
+//       user: { $in: userIds },
+//     }).select("user linkedin jobTitle profilePicture company");
+
+//     const profileMap = {};
+//     profiles.forEach((profile) => {
+//       profileMap[profile.user.toString()] = profile;
+//     });
+
+//     const enrichedUsers = users.map((user) => {
+//       const profile = profileMap[user._id.toString()];
+//       return {
+//         ...user.toObject(),
+//         jobTitle: profile?.jobTitle || "",
+//         linkedin: profile?.linkedin || "",
+//         profilePicture: profile?.profilePicture || "",
+//         company: profile?.company || "",
+//       };
+//     });
+
+//     /* =========================
+//        RESPONSE
+//     ========================= */
+//     res.status(200).json({
+//       success: true,
+//       currentPage: page,
+//       totalPages: Math.ceil(total / limit),
+//       totalUsers: total,
+//       data: enrichedUsers,
+//     });
+
+//   } catch (error) {
+//     console.error("getAllAlumni error:", error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to fetch alumni",
+//     });
+//   }
+// };
+
+// exports.getAllAlumni = async (req, res) => {
+//   try {
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = parseInt(req.query.limit) || 20;
+//     const search = req.query.search || "";
+//     const onlyLoggedIn = req.query.loggedIn === "true";
+
+//     const skip = (page - 1) * limit;
+
+//     const filter = { role: "user" };
+
+//     // Optional: only users who logged in at least once
+//     if (onlyLoggedIn) {
+//       filter.loginCount = { $gt: 0 };
+//     }
+
+//     if (search) {
+//       filter.$text = { $search: search };
+//     }
+
+//     const users = await User.find(filter)
+//       .select(
+//         "fullname username batch stream email phoneno lastLoginAt loginCount createdAt"
+//       )
+//       .skip(skip)
+//       .limit(limit)
+//       .sort({ createdAt: -1 });
+
+//     const total = await User.countDocuments(filter);
+
+//     res.status(200).json({
+//       success: true,
+//       currentPage: page,
+//       totalPages: Math.ceil(total / limit),
+//       totalUsers: total,
+//       data: users,
+//     });
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({
+//       success: false,
+//       message: "Failed to fetch alumni",
+//     });
+//   }
+// };
 
 // REGISTER
 // exports.registerUser = async (req, res) => {
@@ -258,10 +464,10 @@ exports.getAllAlumni = async (req, res) => {
 // LOGOUT
 exports.logout = (req, res) => {
   res.clearCookie("token", {
-  httpOnly: true,
-  secure: false,
-  sameSite: "lax",
-}).json({
+    httpOnly: true,
+    secure: false,
+    sameSite: "lax",
+  }).json({
     success: true,
     message: "Logout successfully!",
   });
@@ -310,3 +516,5 @@ exports.checkAuth = (req, res) => {
     user,
   });
 };
+
+

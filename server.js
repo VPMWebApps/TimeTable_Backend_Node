@@ -8,6 +8,7 @@ const AdminEventRoutes = require("./routes/adminRoutes/AdminEventRoutes");
 const AdminJobRoutes = require("./routes/adminRoutes/AdminJobRoutes");
 const UserEventRoutes = require("./routes/UserRoutes/UserEventRoutes");
 const UserJobRoutes = require("./routes/UserRoutes/UserJobRoutes");
+const UserInfoRoutes = require("./routes/UserRoutes/UserInfoRoutes");
 
 
 dotenv.config();
@@ -48,6 +49,7 @@ app.use("/api/admin/jobs", AdminJobRoutes);
 //user
 app.use("/api/user/events", UserEventRoutes);
 app.use("/api/user/jobs",UserJobRoutes)
+app.use("/api/user/info",UserInfoRoutes)
 
 
 const PORT = process.env.PORT || 5000;

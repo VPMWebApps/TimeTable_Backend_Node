@@ -49,15 +49,19 @@ const userSchema = new mongoose.Schema(
     },
     lastLoginAt: {
       type: Date,
-    }
+    },
   },
-    
   { timestamps: true }
 );
 
 userSchema.index({ fullname: "text", username: "text", stream: "text" });
+userSchema.index({
+  fullname: "text",
+  username: "text",
+  email: "text",
+  stream: "text",
+});
 
-
-const User = mongoose.model("User", userSchema);
+const User = mongoose.models.User || mongoose.model("User", userSchema);
 
 module.exports = User;

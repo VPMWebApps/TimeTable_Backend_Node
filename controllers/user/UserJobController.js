@@ -87,7 +87,7 @@ exports.getPublicJobs = async (req, res) => {
     console.log("JOB FROM DB 👉", Job);
 
     const page = Math.max(Number(req.query.page) || 1, 1);
-    const limit = Math.min(Number(req.query.limit) || 10, 50);
+    const limit = Math.min(Number(req.query.limit) || 18, 50);
 
     const query = { status: "approved" };
 
