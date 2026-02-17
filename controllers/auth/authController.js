@@ -1,8 +1,7 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const User = require("../../models/user.model");
+const { User, STREAMS } = require("../../models/user.model");
 const UserInfo = require("../../models/UserInfo.model");
-
 
 exports.registerUser = async (req, res) => {
   const { fullname, username, batch, stream, phoneno, email, password } =
@@ -11,29 +10,31 @@ exports.registerUser = async (req, res) => {
   try {
     const normalizedEmail = email.toLowerCase().trim();
 
-    const checkUser = await User.findOne({ email: normalizedEmail });
-    if (checkUser) {
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser) {
       return res.status(409).json({
         success: false,
         message: "User already exists",
       });
     }
-    
-    const academic = await Academic.findById(req.body.academic);
 
-    if (!academic || !academic.isActive) {
+    const hashPassword = await bcrypt.hash(password, 12);
+
+    const parsedBatch = Number(batch);
+
+    if (isNaN(parsedBatch) || parsedBatch < 1900 || parsedBatch > 2100) {
       return res.status(400).json({
         success: false,
-        message: "Invalid academic selection",
+        message: "Invalid graduation year",
       });
     }
 
-    const hashPassword = await bcrypt.hash(password, 12);
 
     const newUser = new User({
       fullname,
       username,
-      academic: "academicObjectId",
+      batch: parsedBatch,
+      stream,               // must match enum exactly
       phoneno,
       email: normalizedEmail,
       password: hashPassword,
@@ -120,85 +121,126 @@ exports.loginUser = async (req, res) => {
 
 exports.getAllAlumni = async (req, res) => {
   try {
-    const page = Math.max(parseInt(req.query.page) || 1, 1);
-    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
-    const search = req.query.search?.trim() || "";
-    const onlyLoggedIn = req.query.loggedIn === "true";
-    const batch = req.query.batch?.trim();
-    const stream = req.query.stream?.trim();
+    /* =========================
+       VALIDATE PAGINATION
+    ========================= */
+
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 20;
+
+    if (page < 1 || limit < 1 || limit > 100) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid pagination parameters",
+      });
+    }
+
     const skip = (page - 1) * limit;
 
     /* =========================
-       BUILD FILTER OBJECT
+       BUILD FILTER
     ========================= */
+
     const filter = { role: "user" };
 
-    if (onlyLoggedIn) {
+    const { search, loggedIn, batch, stream } = req.query;
+
+    // Only logged-in users
+    if (loggedIn === "true") {
       filter.loginCount = { $gt: 0 };
     }
 
-    // Batch filter (strict 4 digit match)
+    // Batch validation
     if (batch) {
-      if (!/^[0-9]{4}$/.test(batch)) {
+      const parsedBatch = Number(batch);
+
+      if (
+        isNaN(parsedBatch) ||
+        parsedBatch < 1900 ||
+        parsedBatch > 2100
+      ) {
         return res.status(400).json({
           success: false,
-          message: "Invalid batch format",
+          message: "Invalid batch year",
         });
       }
-      filter.batch = batch;
+
+      filter.batch = parsedBatch;
     }
 
-    // Stream filter (case-insensitive exact match)
+    // Stream validation
     if (stream) {
-      filter.stream = { $regex: `^${stream}$`, $options: "i" };
+      if (!STREAMS.includes(stream)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid stream",
+        });
+      }
+
+      filter.stream = stream;
     }
 
-    // Text search (must be last to avoid accidental override)
-    if (search) {
-      filter.$text = { $search: search };
+    // Text search
+    if (search?.trim()) {
+      filter.$text = { $search: search.trim() };
     }
 
     /* =========================
-       FETCH USERS
+       QUERY USERS
     ========================= */
-    const users = await User.find(filter)
+
+    const query = User.find(filter)
       .select(
         "fullname username batch stream email phoneno lastLoginAt loginCount createdAt"
       )
       .skip(skip)
-      .limit(limit)
-      .sort({ createdAt: -1 });
+      .limit(limit);
+
+    // Sort logic
+    if (filter.$text) {
+      query
+        .select({ score: { $meta: "textScore" } })
+        .sort({ score: { $meta: "textScore" } });
+    } else {
+      query.sort({ createdAt: -1 });
+    }
+
+    const users = await query;
 
     const total = await User.countDocuments(filter);
 
     /* =========================
        FETCH PROFILES
     ========================= */
+
     const userIds = users.map((u) => u._id);
+
     const profiles = await UserInfo.find({
       user: { $in: userIds },
     }).select("user linkedin jobTitle profilePicture company");
 
     const profileMap = {};
-    profiles.forEach((profile) => {
+    for (const profile of profiles) {
       profileMap[profile.user.toString()] = profile;
-    });
+    }
 
     const enrichedUsers = users.map((user) => {
       const profile = profileMap[user._id.toString()];
+
       return {
         ...user.toObject(),
-        jobTitle: profile?.jobTitle || "",
-        linkedin: profile?.linkedin || "",
-        profilePicture: profile?.profilePicture || "",
-        company: profile?.company || "",
+        jobTitle: profile?.jobTitle ?? "",
+        linkedin: profile?.linkedin ?? "",
+        profilePicture: profile?.profilePicture ?? "",
+        company: profile?.company ?? "",
       };
     });
 
     /* =========================
        RESPONSE
     ========================= */
-    res.status(200).json({
+
+    return res.status(200).json({
       success: true,
       currentPage: page,
       totalPages: Math.ceil(total / limit),
@@ -207,7 +249,8 @@ exports.getAllAlumni = async (req, res) => {
     });
   } catch (error) {
     console.error("getAllAlumni error:", error);
-    res.status(500).json({
+
+    return res.status(500).json({
       success: false,
       message: "Failed to fetch alumni",
     });
@@ -513,8 +556,15 @@ exports.checkAuth = (req, res) => {
   res.status(200).json({
     success: true,
     message: "User authenticated!",
-    user,
+    user: {
+      id: user._id.toString(), // ← add this, matches login response
+      email: user.email,
+      role: user.role,
+      username: user.username,
+      fullname: user.fullname,
+      stream: user.stream,
+      batch: user.batch,
+    },
   });
 };
-
 

@@ -1,6 +1,6 @@
 const { handleImageUploadUtil } = require("../../helpers/Cloudinary");
 const UserInfo = require("../../models/UserInfo.model");
-const User = require("../../models/user.model");
+const {User} = require("../../models/user.model");
 
 /* ===============================
    PROFILE IMAGE UPLOAD
