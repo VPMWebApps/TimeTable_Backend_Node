@@ -25,7 +25,7 @@ const userSchema = new mongoose.Schema(
     username: {
       type: String,
       required: true,
-      unique: true,
+      unique: true, // creates unique index
       trim: true,
       minlength: 3,
     },
@@ -46,15 +46,16 @@ const userSchema = new mongoose.Schema(
     phoneno: {
       type: String,
       required: true,
-      unique: true,
+      unique: true, // creates unique index
       match: [/^[0-9]{10}$/, "Phone number must be 10 digits"],
     },
 
     email: {
       type: String,
       required: true,
-      unique: true,
+      unique: true, // creates unique index
       lowercase: true,
+      trim: true,
       match: [/^\S+@\S+\.\S+$/, "Enter a valid email"],
     },
 
@@ -66,14 +67,15 @@ const userSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ["user", "admin"], // 🔥 Don’t leave role open
+      enum: ["user", "admin"],
       default: "user",
     },
 
     lastLoginAt: {
       type: Date,
     },
-    loginCount: {           
+
+    loginCount: {
       type: Number,
       default: 0,
     },
@@ -82,21 +84,17 @@ const userSchema = new mongoose.Schema(
 );
 
 /* =========================
-   INDEXES
+   PERFORMANCE INDEXES
 ========================= */
 
-// Filtering performance
+// Directory filtering (stream + batch)
 userSchema.index({ stream: 1, batch: 1 });
 
-// Sorting performance
+// Newest users sorting
 userSchema.index({ createdAt: -1 });
 
-// Text search (stream removed)
-userSchema.index({
-  fullname: "text",
-  username: "text",
-  email: "text",
-});
+// Name search/sorting
+userSchema.index({ fullname: 1 });
 
 const User = mongoose.models.User || mongoose.model("User", userSchema);
 

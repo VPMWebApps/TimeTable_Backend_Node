@@ -3,27 +3,36 @@ const express = require("express");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const dotenv = require("dotenv");
+const http = require("http");
+const { Server } = require("socket.io");
+
 const authRoutes = require("./routes/authRoutes/authRoutes");
 const AdminEventRoutes = require("./routes/adminRoutes/AdminEventRoutes");
 const AdminJobRoutes = require("./routes/adminRoutes/AdminJobRoutes");
 const UserEventRoutes = require("./routes/UserRoutes/UserEventRoutes");
 const UserJobRoutes = require("./routes/UserRoutes/UserJobRoutes");
 const UserInfoRoutes = require("./routes/UserRoutes/UserInfoRoutes");
+const ConnectionRoutes = require("./routes/UserRoutes/ConnectionRoutes")
 
+const { initSocket } = require("./socket"); 
 
 dotenv.config();
 
 const app = express();
+
+/* ----------------- DATABASE ----------------- */
 
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB Connected"))
   .catch((err) => console.error("❌ MongoDB Connection Error:", err));
 
+/* ----------------- MIDDLEWARE ----------------- */
+
 app.use(
   cors({
     origin: process.env.CLIENT_URL,
-    methods: ["GET", "POST", "DELETE", "PUT","PATCH"],
+    methods: ["GET", "POST", "DELETE", "PUT", "PATCH"],
     allowedHeaders: [
       "Content-Type",
       "Authorization",
@@ -38,19 +47,39 @@ app.use(
 app.use(cookieParser());
 app.use(express.json());
 
+/* ----------------- ROUTES ----------------- */
 
-//auth
+// auth
 app.use("/api/auth", authRoutes);
 
-//admin
+// admin
 app.use("/api/admin/events", AdminEventRoutes);
 app.use("/api/admin/jobs", AdminJobRoutes);
 
-//user
+// user
 app.use("/api/user/events", UserEventRoutes);
-app.use("/api/user/jobs",UserJobRoutes)
-app.use("/api/user/info",UserInfoRoutes)
+app.use("/api/user/jobs", UserJobRoutes);
+app.use("/api/user/info", UserInfoRoutes);
+app.use("/api/user/connect", ConnectionRoutes);
+
+/* ----------------- SOCKET SETUP ----------------- */
+
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: process.env.CLIENT_URL,
+    credentials: true,
+  },
+});
+
+app.set("io", io);
+
+initSocket(io);
 
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});

@@ -6,8 +6,7 @@ const userInfoSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      unique: true,
-      index: true,
+      unique: true, // this alone creates the index
     },
 
     jobTitle: {
@@ -52,9 +51,6 @@ const userInfoSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
-// This is correct
-userInfoSchema.index({ user: 1 });
 
 const UserInfo =
   mongoose.models.UserInfo ||
