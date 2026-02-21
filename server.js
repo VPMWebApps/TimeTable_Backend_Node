@@ -13,6 +13,7 @@ const UserEventRoutes = require("./routes/UserRoutes/UserEventRoutes");
 const UserJobRoutes = require("./routes/UserRoutes/UserJobRoutes");
 const UserInfoRoutes = require("./routes/UserRoutes/UserInfoRoutes");
 const ConnectionRoutes = require("./routes/UserRoutes/ConnectionRoutes")
+const messageRoutes = require("./routes/UserRoutes/MessageRoutes")
 
 const { initSocket } = require("./socket"); 
 
@@ -61,6 +62,7 @@ app.use("/api/user/events", UserEventRoutes);
 app.use("/api/user/jobs", UserJobRoutes);
 app.use("/api/user/info", UserInfoRoutes);
 app.use("/api/user/connect", ConnectionRoutes);
+app.use("/api/user/message", messageRoutes);
 
 /* ----------------- SOCKET SETUP ----------------- */
 
