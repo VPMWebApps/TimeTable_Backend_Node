@@ -3,94 +3,125 @@ const jwt = require("jsonwebtoken");
 const { User, STREAMS } = require("../../models/user.model");
 const UserInfo = require("../../models/UserInfo.model");
 
-exports.registerUser = async (req, res) => {
-  const { fullname, username, batch, stream, phoneno, email, password } =
-    req.body;
+/* ─────────────────────────────────────────
+   HELPER: parse MongoDB duplicate key error
+───────────────────────────────────────── */
+function parseDuplicateKeyError(err) {
+  if (err.code !== 11000) return null;
+  const field = Object.keys(err.keyPattern)[0];
+  const messages = {
+    email: "An account with this email already exists.",
+    phoneno: "This phone number is already registered.",
+    username: "This username is already taken.",
+  };
+  return messages[field] || `${field} is already in use.`;
+}
 
+/* ─────────────────────────────────────────
+   REGISTER
+───────────────────────────────────────── */
+exports.registerUser = async (req, res) => {
   try {
+    const { fullname, username, batch, stream, phoneno, email, password } = req.body;
+
+    // ── Required fields ──
+    if (!fullname?.trim()) return res.status(400).json({ success: false, message: "Full name is required." });
+    if (!username?.trim()) return res.status(400).json({ success: false, message: "Username is required." });
+    if (!email?.trim()) return res.status(400).json({ success: false, message: "Email is required." });
+    if (!password) return res.status(400).json({ success: false, message: "Password is required." });
+    if (!phoneno?.trim()) return res.status(400).json({ success: false, message: "Phone number is required." });
+    if (!stream) return res.status(400).json({ success: false, message: "Stream is required." });
+    if (!batch) return res.status(400).json({ success: false, message: "Graduation year is required." });
+
+    // ── Field validation ──
+    if (password.length < 6) {
+      return res.status(400).json({ success: false, message: "Password must be at least 6 characters." });
+    }
+
+    if (!/^\d{10}$/.test(phoneno.trim())) {
+      return res.status(400).json({ success: false, message: "Phone number must be exactly 10 digits." });
+    }
+
+    const parsedBatch = Number(batch);
+    if (isNaN(parsedBatch) || parsedBatch < 1900 || parsedBatch > 2100) {
+      return res.status(400).json({ success: false, message: "Invalid graduation year (1900–2100)." });
+    }
+
+    if (STREAMS && !STREAMS.includes(stream)) {
+      return res.status(400).json({ success: false, message: "Invalid stream selected." });
+    }
+
     const normalizedEmail = email.toLowerCase().trim();
 
+    // ── Check existing email ──
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
-      return res.status(409).json({
-        success: false,
-        message: "User already exists",
-      });
+      return res.status(409).json({ success: false, message: "An account with this email already exists." });
     }
 
     const hashPassword = await bcrypt.hash(password, 12);
 
-    const parsedBatch = Number(batch);
-
-    if (isNaN(parsedBatch) || parsedBatch < 1900 || parsedBatch > 2100) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid graduation year",
-      });
-    }
-
-
     const newUser = new User({
-      fullname,
-      username,
+      fullname: fullname.trim(),
+      username: username.trim(),
       batch: parsedBatch,
-      stream,               // must match enum exactly
-      phoneno,
+      stream,
+      phoneno: phoneno.trim(),
       email: normalizedEmail,
       password: hashPassword,
     });
 
     await newUser.save();
 
-    res.status(201).json({
-      success: true,
-      message: "Registration Successful",
-    });
+    return res.status(201).json({ success: true, message: "Registration successful!" });
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
+    console.error("Register error:", err);
+
+    // Duplicate key (phone, username, or any other unique field)
+    const dupMessage = parseDuplicateKeyError(err);
+    if (dupMessage) {
+      return res.status(409).json({ success: false, message: dupMessage });
+    }
+
+    // Mongoose validation error
+    if (err.name === "ValidationError") {
+      const message = Object.values(err.errors).map(e => e.message).join(" ");
+      return res.status(400).json({ success: false, message });
+    }
+
+    return res.status(500).json({ success: false, message: "Something went wrong. Please try again." });
   }
 };
 
+/* ─────────────────────────────────────────
+   LOGIN
+───────────────────────────────────────── */
 exports.loginUser = async (req, res) => {
-  const { email, password } = req.body;
-
   try {
+    const { email, password } = req.body;
+
+    if (!email?.trim()) return res.status(400).json({ success: false, message: "Email is required." });
+    if (!password) return res.status(400).json({ success: false, message: "Password is required." });
+
     const normalizedEmail = email.toLowerCase().trim();
 
-    const checkUser = await User.findOne({ email: normalizedEmail }).select(
-      "+password"
-    );
-
+    const checkUser = await User.findOne({ email: normalizedEmail }).select("+password");
     if (!checkUser) {
-      return res.status(404).json({
-        success: false,
-        message: "User doesn't exist",
-      });
+      return res.status(404).json({ success: false, message: "No account found with this email." });
     }
 
     const match = await bcrypt.compare(password, checkUser.password);
-
     if (!match) {
-      return res.status(401).json({
-        success: false,
-        message: "Incorrect password",
-      });
+      return res.status(401).json({ success: false, message: "Incorrect password." });
     }
 
-    // ✅ Track login
     checkUser.lastLoginAt = new Date();
     checkUser.loginCount += 1;
     await checkUser.save();
 
     const token = jwt.sign(
-      {
-        id: checkUser._id,
-        role: checkUser.role,
-      },
+      { id: checkUser._id, role: checkUser.role },
       process.env.CLIENT_SECRET_KEY,
       { expiresIn: "1d" }
     );
@@ -102,7 +133,7 @@ exports.loginUser = async (req, res) => {
       maxAge: 24 * 60 * 60 * 1000,
     }).json({
       success: true,
-      message: "Logged in successfully",
+      message: "Logged in successfully!",
       user: {
         id: checkUser._id,
         email: checkUser.email,
@@ -110,114 +141,69 @@ exports.loginUser = async (req, res) => {
         username: checkUser.username,
       },
     });
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
+    console.error("Login error:", err);
+
+    if (err.name === "JsonWebTokenError") {
+      return res.status(500).json({ success: false, message: "Token generation failed. Please try again." });
+    }
+
+    return res.status(500).json({ success: false, message: "Something went wrong. Please try again." });
   }
 };
 
+/* ─────────────────────────────────────────
+   GET ALL ALUMNI
+───────────────────────────────────────── */
 exports.getAllAlumni = async (req, res) => {
   try {
-    /* =========================
-       VALIDATE PAGINATION
-    ========================= */
-
     const page = Number(req.query.page) || 1;
     const limit = Number(req.query.limit) || 20;
 
     if (page < 1 || limit < 1 || limit > 100) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid pagination parameters",
-      });
+      return res.status(400).json({ success: false, message: "Invalid pagination parameters." });
     }
 
     const skip = (page - 1) * limit;
-
-    /* =========================
-       BUILD FILTER
-    ========================= */
-
     const filter = { role: "user" };
-
     const { search, loggedIn, batch, stream } = req.query;
 
-    // Only logged-in users
-    if (loggedIn === "true") {
-      filter.loginCount = { $gt: 0 };
-    }
+    if (loggedIn === "true") filter.loginCount = { $gt: 0 };
 
-    // Batch validation
     if (batch) {
       const parsedBatch = Number(batch);
-
-      if (
-        isNaN(parsedBatch) ||
-        parsedBatch < 1900 ||
-        parsedBatch > 2100
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid batch year",
-        });
+      if (isNaN(parsedBatch) || parsedBatch < 1900 || parsedBatch > 2100) {
+        return res.status(400).json({ success: false, message: "Invalid batch year." });
       }
-
       filter.batch = parsedBatch;
     }
 
-    // Stream validation
     if (stream) {
-      if (!STREAMS.includes(stream)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid stream",
-        });
+      if (STREAMS && !STREAMS.includes(stream)) {
+        return res.status(400).json({ success: false, message: "Invalid stream." });
       }
-
       filter.stream = stream;
     }
 
-    // Text search
-    if (search?.trim()) {
-      filter.$text = { $search: search.trim() };
-    }
-
-    /* =========================
-       QUERY USERS
-    ========================= */
+    if (search?.trim()) filter.$text = { $search: search.trim() };
 
     const query = User.find(filter)
-      .select(
-        "fullname username batch stream email phoneno lastLoginAt loginCount createdAt"
-      )
+      .select("fullname username batch stream email phoneno lastLoginAt loginCount createdAt")
       .skip(skip)
       .limit(limit);
 
-    // Sort logic
     if (filter.$text) {
-      query
-        .select({ score: { $meta: "textScore" } })
-        .sort({ score: { $meta: "textScore" } });
+      query.select({ score: { $meta: "textScore" } }).sort({ score: { $meta: "textScore" } });
     } else {
       query.sort({ createdAt: -1 });
     }
 
-    const users = await query;
-
-    const total = await User.countDocuments(filter);
-
-    /* =========================
-       FETCH PROFILES
-    ========================= */
+    const [users, total] = await Promise.all([query, User.countDocuments(filter)]);
 
     const userIds = users.map((u) => u._id);
-
-    const profiles = await UserInfo.find({
-      user: { $in: userIds },
-    }).select("user linkedin jobTitle profilePicture company");
+    const profiles = await UserInfo.find({ user: { $in: userIds } })
+      .select("user linkedin jobTitle profilePicture company");
 
     const profileMap = {};
     for (const profile of profiles) {
@@ -226,7 +212,6 @@ exports.getAllAlumni = async (req, res) => {
 
     const enrichedUsers = users.map((user) => {
       const profile = profileMap[user._id.toString()];
-
       return {
         ...user.toObject(),
         jobTitle: profile?.jobTitle ?? "",
@@ -236,10 +221,6 @@ exports.getAllAlumni = async (req, res) => {
       };
     });
 
-    /* =========================
-       RESPONSE
-    ========================= */
-
     return res.status(200).json({
       success: true,
       currentPage: page,
@@ -247,77 +228,87 @@ exports.getAllAlumni = async (req, res) => {
       totalUsers: total,
       data: enrichedUsers,
     });
-  } catch (error) {
-    console.error("getAllAlumni error:", error);
 
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch alumni",
-    });
+  } catch (err) {
+    console.error("getAllAlumni error:", err);
+    return res.status(500).json({ success: false, message: "Failed to fetch alumni. Please try again." });
   }
 };
 
-// LOGOUT
+/* ─────────────────────────────────────────
+   LOGOUT
+───────────────────────────────────────── */
 exports.logout = (req, res) => {
-  res.clearCookie("token", {
-    httpOnly: true,
-    secure: false,
-    sameSite: "lax",
-  }).json({
-    success: true,
-    message: "Logout successfully!",
-  });
-};;
-
-// AUTH MIDDLEWARE
-exports.authMiddleware = async (req, res, next) => {
-  const token = req.cookies.token;
-
-  if (!token) {
-    return res.status(401).json({
-      success: false,
-      message: "Unauthorized access",
-    });
-  }
-
   try {
-    const decoded = jwt.verify(token, process.env.CLIENT_SECRET_KEY);
+    res.clearCookie("token", {
+      httpOnly: true,
+      secure: false,
+      sameSite: "lax",
+    }).json({ success: true, message: "Logged out successfully!" });
+  } catch (err) {
+    console.error("Logout error:", err);
+    return res.status(500).json({ success: false, message: "Logout failed. Please try again." });
+  }
+};
 
-    const user = await User.findById(decoded.id).select("_id fullname username email stream batch role");
+/* ─────────────────────────────────────────
+   AUTH MIDDLEWARE
+───────────────────────────────────────── */
+exports.authMiddleware = async (req, res, next) => {
+  try {
+    const token = req.cookies.token;
 
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: "User not found",
-      });
+    if (!token) {
+      return res.status(401).json({ success: false, message: "Unauthorized access." });
     }
 
-    req.user = user; // 🔥 FULL USER OBJECT
+    const decoded = jwt.verify(token, process.env.CLIENT_SECRET_KEY);
+
+    const user = await User.findById(decoded.id)
+      .select("_id fullname username email stream batch role");
+
+    if (!user) {
+      return res.status(401).json({ success: false, message: "User not found. Please log in again." });
+    }
+
+    req.user = user;
     next();
-  } catch (error) {
-    return res.status(401).json({
-      success: false,
-      message: "Unauthorized access",
-    });
+
+  } catch (err) {
+    console.error("Auth middleware error:", err);
+
+    if (err.name === "TokenExpiredError") {
+      return res.status(401).json({ success: false, message: "Session expired. Please log in again." });
+    }
+    if (err.name === "JsonWebTokenError") {
+      return res.status(401).json({ success: false, message: "Invalid session. Please log in again." });
+    }
+
+    return res.status(401).json({ success: false, message: "Unauthorized access." });
   }
 };
 
-// CHECK AUTH
+/* ─────────────────────────────────────────
+   CHECK AUTH
+───────────────────────────────────────── */
 exports.checkAuth = (req, res) => {
-  const user = req.user;
-  res.status(200).json({
-    success: true,
-    message: "User authenticated!",
-    user: {
-      id: user._id.toString(), // ← add this, matches login response
-      email: user.email,
-      role: user.role,
-      username: user.username,
-      fullname: user.fullname,
-      stream: user.stream,
-      batch: user.batch,
-    },
-  });
+  try {
+    const user = req.user;
+    res.status(200).json({
+      success: true,
+      message: "User authenticated!",
+      user: {
+        id: user._id.toString(),
+        email: user.email,
+        role: user.role,
+        username: user.username,
+        fullname: user.fullname,
+        stream: user.stream,
+        batch: user.batch,
+      },
+    });
+  } catch (err) {
+    console.error("checkAuth error:", err);
+    return res.status(500).json({ success: false, message: "Authentication check failed." });
+  }
 };
-

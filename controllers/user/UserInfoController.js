@@ -1,6 +1,6 @@
 const { handleImageUploadUtil } = require("../../helpers/Cloudinary");
 const UserInfo = require("../../models/UserInfo.model");
-const {User} = require("../../models/user.model");
+const { User } = require("../../models/user.model");
 
 /* ===============================
    PROFILE IMAGE UPLOAD
@@ -38,11 +38,12 @@ exports.handleProfileImageUpload = async (req, res) => {
 =============================== */
 exports.getUserProfile = async (req, res) => {
   try {
-    const userId = req.user._id; 
+    const userId = req.user._id;
+    const user = await User.findById(userId).select("fullname email batch stream").lean();
 
-    const user = await User.findById(userId).select(
-      "fullname email batch stream"
-    );
+    // const user = await User.findById(userId).select(
+    //   "fullname email batch stream"
+    // );
 
     if (!user) {
       return res.status(404).json({
@@ -51,7 +52,9 @@ exports.getUserProfile = async (req, res) => {
       });
     }
 
-    const userInfo = await UserInfo.findOne({ user: userId });
+    const userInfo = await UserInfo.findOne({ user: userId }).lean(); // add .lean()
+    // const userInfo = await UserInfo.findOne({ user: userId });
+
 
     const profile = {
       user: {
@@ -90,7 +93,7 @@ exports.getUserProfile = async (req, res) => {
 =============================== */
 exports.createOrUpdateUserProfile = async (req, res) => {
   try {
-const userId = req.user._id;
+    const userId = req.user._id;
 
 
 
