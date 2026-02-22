@@ -3,6 +3,7 @@ const express = require("express");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const dotenv = require("dotenv");
+
 const http = require("http");
 const { Server } = require("socket.io");
 
@@ -68,7 +69,7 @@ app.use("/api/user/message", messageRoutes);
 
 const server = http.createServer(app);
 
-const io = new Server(server, {
+const io = new Server(server, { 
   cors: {
     origin: process.env.CLIENT_URL,
     credentials: true,

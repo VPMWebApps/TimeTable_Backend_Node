@@ -3,10 +3,8 @@ const Message = require("../../models/Message.model");
 const Conversation = require("../../models/Conversation.model");
 const Connection = require("../../models/Connection.model");
 const { emitToUser } = require("../../socket");
+const { uploadFileToCloudinary } = require("../../helpers/Cloudinary");
 
-/* ─────────────────────────────────────────
-   HELPER: verify users are connected
-───────────────────────────────────────── */
 async function getActiveConnection(userA, userB) {
   return Connection.findOne({
     status: "ACCEPTED",
@@ -17,14 +15,8 @@ async function getActiveConnection(userA, userB) {
   });
 }
 
-/* ─────────────────────────────────────────
-   HELPER: get or create conversation
-───────────────────────────────────────── */
 async function getOrCreateConversation(connection, userA, userB) {
-  let conversation = await Conversation.findOne({
-    connection: connection._id,
-  });
-
+  let conversation = await Conversation.findOne({ connection: connection._id });
   if (!conversation) {
     conversation = await Conversation.create({
       participants: [userA, userB],
@@ -32,45 +24,48 @@ async function getOrCreateConversation(connection, userA, userB) {
       unreadCount: { [userA]: 0, [userB]: 0 },
     });
   }
-
   return conversation;
 }
 
 /* ─────────────────────────────────────────
    SEND MESSAGE
-   POST /api/messages/send
-   Body: { recipientId, content, replyTo? }
+   POST /api/user/message/send
+   Body (multipart/form-data):
+     recipientId, content?, replyTo?, files[]
 ───────────────────────────────────────── */
 exports.sendMessage = async (req, res) => {
   try {
     const io = req.app.get("io");
     const senderId = req.user.id;
     const { recipientId, content, replyTo } = req.body;
+    const files = req.files || [];
 
-    // --- Validation ---
+    console.log("📎 Files received:", files.length);
+    console.log("📎 Body:", req.body);
+    console.log("📎 Content-Type:", req.headers["content-type"]);
+
+    // Validation
     if (!recipientId || !mongoose.Types.ObjectId.isValid(recipientId)) {
       return res.status(400).json({ message: "Invalid recipient" });
     }
-
     if (senderId === recipientId) {
       return res.status(400).json({ message: "Cannot message yourself" });
     }
-
-    if (!content?.trim() && !req.files?.length) {
+    if (!content?.trim() && files.length === 0) {
       return res.status(400).json({ message: "Message cannot be empty" });
     }
-
     if (content && content.trim().length > 5000) {
       return res.status(400).json({ message: "Message too long (max 5000 chars)" });
     }
+    if (files.length > 5) {
+      return res.status(400).json({ message: "Max 5 files per message" });
+    }
 
-    // --- Must be connected ---
     const connection = await getActiveConnection(senderId, recipientId);
     if (!connection) {
       return res.status(403).json({ message: "You are not connected with this user" });
     }
 
-    // --- Validate replyTo if provided ---
     if (replyTo) {
       if (!mongoose.Types.ObjectId.isValid(replyTo)) {
         return res.status(400).json({ message: "Invalid replyTo message ID" });
@@ -81,18 +76,43 @@ exports.sendMessage = async (req, res) => {
       }
     }
 
-    // --- Get or create conversation ---
     const conversation = await getOrCreateConversation(connection, senderId, recipientId);
 
-    // --- Create message ---
+    // Upload attachments to Cloudinary
+    const attachments = [];
+    for (const file of files) {
+      try {
+        const result = await uploadFileToCloudinary(
+          file.buffer,
+          file.mimetype,
+          file.originalname
+        );
+
+        const type = file.mimetype.startsWith("image/") ? "image"
+          : file.mimetype.startsWith("video/") ? "video"
+            : file.mimetype.startsWith("audio/") ? "audio"
+              : "file";
+
+        attachments.push({
+          url: result.secure_url,
+          type,
+          name: file.originalname,
+          size: file.size,
+        });
+      } catch (uploadErr) {
+        console.error("Cloudinary upload error:", uploadErr);
+        return res.status(500).json({ message: `Failed to upload ${file.originalname}` });
+      }
+    }
+
     const message = await Message.create({
       conversation: conversation._id,
       sender: senderId,
       content: content?.trim() || "",
       replyTo: replyTo || null,
+      attachments,
     });
 
-    // --- Update conversation: lastMessage + unread count ---
     const unreadCount = conversation.unreadCount || new Map();
     const recipientUnread = (unreadCount.get(recipientId) || 0) + 1;
 
@@ -101,16 +121,22 @@ exports.sendMessage = async (req, res) => {
       [`unreadCount.${recipientId}`]: recipientUnread,
     });
 
-    // --- Populate for response ---
-    const populated = await message.populate("sender", "fullname username profileImage");
+    const populated = await Message.findById(message._id)
+      .populate("sender", "fullname username profileImage")
+      .populate({
+        path: "replyTo",
+        populate: { path: "sender", select: "fullname username profileImage" },
+      });
 
-    // --- Real-time ---
     emitToUser(io, recipientId, "new_message", {
       conversationId: conversation._id,
       message: populated,
     });
 
-    return res.status(201).json({ message: populated, conversationId: conversation._id });
+    return res.status(201).json({
+      message: populated,
+      conversationId: conversation._id,
+    });
   } catch (err) {
     console.error("Send Message Error:", err);
     return res.status(500).json({ message: "Server error" });
@@ -118,8 +144,7 @@ exports.sendMessage = async (req, res) => {
 };
 
 /* ─────────────────────────────────────────
-   GET MESSAGES IN CONVERSATION (paginated)
-   GET /api/messages/:conversationId?page=1&limit=30
+   GET MESSAGES
 ───────────────────────────────────────── */
 exports.getMessages = async (req, res) => {
   try {
@@ -131,25 +156,17 @@ exports.getMessages = async (req, res) => {
       return res.status(400).json({ message: "Invalid conversation ID" });
     }
 
-    // Must be a participant
     const conversation = await Conversation.findOne({
       _id: conversationId,
       participants: userId,
     });
+    if (!conversation) return res.status(403).json({ message: "Access denied" });
 
-    if (!conversation) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    // Verify connection still active
     const connection = await Connection.findOne({
       _id: conversation.connection,
       status: "ACCEPTED",
     });
-
-    if (!connection) {
-      return res.status(403).json({ message: "You are no longer connected with this user" });
-    }
+    if (!connection) return res.status(403).json({ message: "You are no longer connected with this user" });
 
     const clearedAt = conversation.clearedAt?.get(userId) || null;
 
@@ -162,18 +179,21 @@ exports.getMessages = async (req, res) => {
 
     const messages = await Message.find(query)
       .populate("sender", "fullname username profileImage")
-      .populate("replyTo", "content sender deletedForEveryone")
+      .populate({
+        path: "replyTo",
+        select: "content sender deletedForEveryone attachments",
+        populate: { path: "sender", select: "fullname username" },
+      })
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit));
 
-    // Reset unread count for this user
     await Conversation.findByIdAndUpdate(conversationId, {
       [`unreadCount.${userId}`]: 0,
     });
 
     return res.json({
-      messages: messages.reverse(), // Return oldest-first for display
+      messages: messages.reverse(),
       page: Number(page),
       hasMore: messages.length === Number(limit),
     });
@@ -184,35 +204,27 @@ exports.getMessages = async (req, res) => {
 };
 
 /* ─────────────────────────────────────────
-   GET ALL CONVERSATIONS (inbox)
-   GET /api/messages/conversations
+   GET CONVERSATIONS
 ───────────────────────────────────────── */
 exports.getConversations = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const conversations = await Conversation.find({
-      participants: userId,
-    })
+    const conversations = await Conversation.find({ participants: userId })
       .populate("participants", "fullname username profileImage")
       .populate({
         path: "lastMessage",
-        select: "content sender createdAt deletedForEveryone",
+        select: "content sender createdAt deletedForEveryone attachments",
         populate: { path: "sender", select: "fullname username" },
       })
       .sort({ updatedAt: -1 });
 
     const formatted = conversations.map((conv) => {
-      const otherUser = conv.participants.find(
-        (p) => p._id.toString() !== userId
-      );
-
-      // Hide last message content if deleted for everyone
+      const otherUser = conv.participants.find((p) => p._id.toString() !== userId);
       let lastMsg = conv.lastMessage;
       if (lastMsg?.deletedForEveryone) {
         lastMsg = { ...lastMsg.toObject(), content: "This message was deleted" };
       }
-
       return {
         id: conv._id,
         otherUser,
@@ -230,8 +242,7 @@ exports.getConversations = async (req, res) => {
 };
 
 /* ─────────────────────────────────────────
-   MARK MESSAGES AS READ
-   PATCH /api/messages/:conversationId/read
+   MARK AS READ
 ───────────────────────────────────────── */
 exports.markAsRead = async (req, res) => {
   try {
@@ -247,14 +258,10 @@ exports.markAsRead = async (req, res) => {
       _id: conversationId,
       participants: userId,
     });
-
-    if (!conversation) {
-      return res.status(403).json({ message: "Access denied" });
-    }
+    if (!conversation) return res.status(403).json({ message: "Access denied" });
 
     const now = new Date();
 
-    // Mark all unread messages (not sent by this user) as read
     await Message.updateMany(
       {
         conversation: conversationId,
@@ -265,15 +272,11 @@ exports.markAsRead = async (req, res) => {
       { $push: { readBy: { user: userId, readAt: now } } }
     );
 
-    // Reset unread count
     await Conversation.findByIdAndUpdate(conversationId, {
       [`unreadCount.${userId}`]: 0,
     });
 
-    // Notify sender of read receipt
-    const otherUser = conversation.participants.find(
-      (p) => p.toString() !== userId
-    );
+    const otherUser = conversation.participants.find((p) => p.toString() !== userId);
 
     emitToUser(io, otherUser, "messages_read", {
       conversationId,
@@ -290,8 +293,6 @@ exports.markAsRead = async (req, res) => {
 
 /* ─────────────────────────────────────────
    EDIT MESSAGE
-   PATCH /api/messages/:messageId/edit
-   Body: { content }
 ───────────────────────────────────────── */
 exports.editMessage = async (req, res) => {
   try {
@@ -303,11 +304,9 @@ exports.editMessage = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(messageId)) {
       return res.status(400).json({ message: "Invalid message ID" });
     }
-
     if (!content?.trim()) {
       return res.status(400).json({ message: "Content cannot be empty" });
     }
-
     if (content.trim().length > 5000) {
       return res.status(400).json({ message: "Message too long" });
     }
@@ -318,13 +317,9 @@ exports.editMessage = async (req, res) => {
       deletedForEveryone: false,
       deletedFor: { $ne: userId },
     });
+    if (!message) return res.status(404).json({ message: "Message not found or not yours" });
 
-    if (!message) {
-      return res.status(404).json({ message: "Message not found or not yours" });
-    }
-
-    // Optional: restrict editing after X minutes
-    const EDIT_WINDOW_MS = 15 * 60 * 1000; // 15 min
+    const EDIT_WINDOW_MS = 15 * 60 * 1000;
     if (Date.now() - message.createdAt.getTime() > EDIT_WINDOW_MS) {
       return res.status(403).json({ message: "Edit window has expired (15 minutes)" });
     }
@@ -334,9 +329,7 @@ exports.editMessage = async (req, res) => {
     await message.save();
 
     const conversation = await Conversation.findById(message.conversation);
-    const otherUser = conversation.participants.find(
-      (p) => p.toString() !== userId
-    );
+    const otherUser = conversation.participants.find((p) => p.toString() !== userId);
 
     emitToUser(io, otherUser, "message_edited", {
       conversationId: message.conversation,
@@ -353,8 +346,7 @@ exports.editMessage = async (req, res) => {
 };
 
 /* ─────────────────────────────────────────
-   DELETE MESSAGE FOR ME
-   DELETE /api/messages/:messageId/me
+   DELETE FOR ME
 ───────────────────────────────────────── */
 exports.deleteMessageForMe = async (req, res) => {
   try {
@@ -365,20 +357,13 @@ exports.deleteMessageForMe = async (req, res) => {
       return res.status(400).json({ message: "Invalid message ID" });
     }
 
-    // Must be a participant of the conversation
     const message = await Message.findById(messageId).populate("conversation");
-
-    if (!message) {
-      return res.status(404).json({ message: "Message not found" });
-    }
+    if (!message) return res.status(404).json({ message: "Message not found" });
 
     const isParticipant = message.conversation.participants
       .map((p) => p.toString())
       .includes(userId);
-
-    if (!isParticipant) {
-      return res.status(403).json({ message: "Access denied" });
-    }
+    if (!isParticipant) return res.status(403).json({ message: "Access denied" });
 
     if (message.deletedFor.map((d) => d.toString()).includes(userId)) {
       return res.status(409).json({ message: "Already deleted for you" });
@@ -395,8 +380,7 @@ exports.deleteMessageForMe = async (req, res) => {
 };
 
 /* ─────────────────────────────────────────
-   DELETE MESSAGE FOR EVERYONE
-   DELETE /api/messages/:messageId/everyone
+   DELETE FOR EVERYONE
 ───────────────────────────────────────── */
 exports.deleteMessageForEveryone = async (req, res) => {
   try {
@@ -413,13 +397,9 @@ exports.deleteMessageForEveryone = async (req, res) => {
       sender: userId,
       deletedForEveryone: false,
     });
+    if (!message) return res.status(404).json({ message: "Message not found or not yours" });
 
-    if (!message) {
-      return res.status(404).json({ message: "Message not found or not yours" });
-    }
-
-    // Optional: time-restrict delete for everyone
-    const DELETE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+    const DELETE_WINDOW_MS = 60 * 60 * 1000;
     if (Date.now() - message.createdAt.getTime() > DELETE_WINDOW_MS) {
       return res.status(403).json({ message: "Delete window expired (1 hour)" });
     }
@@ -429,9 +409,7 @@ exports.deleteMessageForEveryone = async (req, res) => {
     await message.save();
 
     const conversation = await Conversation.findById(message.conversation);
-    const otherUser = conversation.participants.find(
-      (p) => p.toString() !== userId
-    );
+    const otherUser = conversation.participants.find((p) => p.toString() !== userId);
 
     emitToUser(io, otherUser, "message_deleted", {
       conversationId: message.conversation,
@@ -446,8 +424,7 @@ exports.deleteMessageForEveryone = async (req, res) => {
 };
 
 /* ─────────────────────────────────────────
-   CLEAR CHAT (delete for me, all messages)
-   DELETE /api/messages/:conversationId/clear
+   CLEAR CHAT
 ───────────────────────────────────────── */
 exports.clearChat = async (req, res) => {
   try {
@@ -462,12 +439,8 @@ exports.clearChat = async (req, res) => {
       _id: conversationId,
       participants: userId,
     });
+    if (!conversation) return res.status(403).json({ message: "Access denied" });
 
-    if (!conversation) {
-      return res.status(403).json({ message: "Access denied" });
-    }
-
-    // Set clearedAt timestamp — messages before this won't show for this user
     await Conversation.findByIdAndUpdate(conversationId, {
       [`clearedAt.${userId}`]: new Date(),
       [`unreadCount.${userId}`]: 0,
@@ -481,9 +454,7 @@ exports.clearChat = async (req, res) => {
 };
 
 /* ─────────────────────────────────────────
-   TYPING INDICATOR (socket only, no DB)
-   POST /api/messages/:conversationId/typing
-   Body: { isTyping: true/false }
+   TYPING INDICATOR
 ───────────────────────────────────────── */
 exports.sendTypingIndicator = async (req, res) => {
   try {
@@ -500,16 +471,11 @@ exports.sendTypingIndicator = async (req, res) => {
       _id: conversationId,
       participants: userId,
     });
+    if (!conversation) return res.status(403).json({ message: "Access denied" });
 
-    if (!conversation) {
-      return res.status(403).json({ message: "Access denied" });
-    }
+    const otherUser = conversation.participants.find((p) => p.toString() !== userId);
 
-    const otherUser = conversation.participants.find(
-      (p) => p.toString() !== userId
-    );
-
-    emitToUser(io, otherUser, "typing",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              {
+    emitToUser(io, otherUser, "typing", {
       conversationId,
       userId,
       isTyping: Boolean(isTyping),
