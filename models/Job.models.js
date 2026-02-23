@@ -77,10 +77,22 @@ const JobSchema = new mongoose.Schema(
         match: [/^[0-9]{4}$/, "Invalid batch year"],
       },
       role: {
-         type: String,
-         enum: ["user", "admin"],
-         required: true 
-        }, 
+        type: String,
+        enum: ["user", "admin"],
+        required: true
+      },
+    },
+    applicationType: {
+      type: String,
+      enum: ["external", "form"],
+      required: true,
+      default: "form",
+      index: true,
+    },
+
+    externalLink: {
+      type: String,
+      trim: true,
     },
   },
   { timestamps: true, versionKey: false }

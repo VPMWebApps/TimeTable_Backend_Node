@@ -21,6 +21,8 @@ exports.createJob = async (req, res) => {
       openings = 1,
       location,
       salary,
+      applicationType = "form",
+      externalLink,
     } = req.body;
 
     if (
@@ -43,6 +45,19 @@ exports.createJob = async (req, res) => {
       });
     }
 
+    if (!["external", "form"].includes(applicationType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid application type",
+      });
+    }
+
+    if (applicationType === "external" && !externalLink) {
+      return res.status(400).json({
+        success: false,
+        message: "External link is required for external application type",
+      });
+    }
     const job = await Job.create({
       title,
       companyName,
@@ -52,17 +67,16 @@ exports.createJob = async (req, res) => {
       openings,
       location,
       salary,
+      applicationType,
+      externalLink: applicationType === "external" ? externalLink : undefined,
       status: "pending",
-
-      // ✅ MUST match Job schema exactly
       postedBy: {
         userId: req.user._id,
         username: req.user.username,
         email: req.user.email,
         stream: req.user.stream,
         batch: req.user.batch,
-        role:  req.user.role || "Alumni", // ✅ ADD THIS
-
+        role: req.user.role,
       },
     });
 
@@ -78,8 +92,6 @@ exports.createJob = async (req, res) => {
     });
   }
 };
-
-
 
 exports.getPublicJobs = async (req, res) => {
   try {
@@ -113,7 +125,7 @@ exports.getPublicJobs = async (req, res) => {
     const [jobs, total] = await Promise.all([
       Job.find(query)
         .select(
-          "title companyName employmentType workMode experienceLevel location salary openings createdAt postedBy"
+          "title companyName employmentType workMode experienceLevel location salary openings createdAt postedBy applicationType externalLink"
         )
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
