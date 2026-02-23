@@ -29,19 +29,22 @@ const upload = multer({
   },
 });
 
-// ── Upload any file to Cloudinary ──
+// In your uploadFileToCloudinary function in helpers/Cloudinary.js
+// Change the upload_stream options — add flags: "attachment:false"
+
 async function uploadFileToCloudinary(fileBuffer, mimetype, originalname) {
   return new Promise((resolve, reject) => {
     const resourceType = mimetype.startsWith("image/") ? "image"
       : mimetype.startsWith("video/") ? "video"
-      : mimetype.startsWith("audio/") ? "video" // Cloudinary uses "video" for audio too
+      : mimetype.startsWith("audio/") ? "video"
       : "raw";
 
     const uploadStream = cloudinary.uploader.upload_stream(
       {
-        folder: "messages",
+        folder: "resumes",              // separate folder from messages
         resource_type: resourceType,
         public_id: `${Date.now()}_${originalname.replace(/\s+/g, "_")}`,
+        flags: "attachment:false",      // ← KEY FIX: serve inline, not as download
       },
       (error, result) => {
         if (error) reject(error);
@@ -52,6 +55,29 @@ async function uploadFileToCloudinary(fileBuffer, mimetype, originalname) {
     uploadStream.end(fileBuffer);
   });
 }
+// ── Upload any file to Cloudinary ──
+// async function uploadFileToCloudinary(fileBuffer, mimetype, originalname) {
+//   return new Promise((resolve, reject) => {
+//     const resourceType = mimetype.startsWith("image/") ? "image"
+//       : mimetype.startsWith("video/") ? "video"
+//       : mimetype.startsWith("audio/") ? "video" // Cloudinary uses "video" for audio too
+//       : "raw";
+
+//     const uploadStream = cloudinary.uploader.upload_stream(
+//       {
+//         folder: "messages",
+//         resource_type: resourceType,
+//         public_id: `${Date.now()}_${originalname.replace(/\s+/g, "_")}`,
+//       },
+//       (error, result) => {
+//         if (error) reject(error);
+//         else resolve(result);
+//       }
+//     );
+
+//     uploadStream.end(fileBuffer);
+//   });
+// }
 
 // ── Legacy image helper (keep for other features) ──
 async function handleImageUploadUtil(fileBuffer, mimetype) {
