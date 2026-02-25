@@ -14,7 +14,9 @@ const UserEventRoutes = require("./routes/UserRoutes/UserEventRoutes");
 const UserJobRoutes = require("./routes/UserRoutes/UserJobRoutes");
 const UserInfoRoutes = require("./routes/UserRoutes/UserInfoRoutes");
 const ConnectionRoutes = require("./routes/UserRoutes/ConnectionRoutes")
-const messageRoutes = require("./routes/UserRoutes/MessageRoutes")
+const messageRoutes = require("./routes/UserRoutes/MessageRoutes");
+const NewsRoutes = require("./routes/adminRoutes/AdminNewsRouts")
+const UserNewRoutes = require("./routes/UserRoutes/UserNewsRoutes")
 
 const { initSocket } = require("./socket"); 
 
@@ -57,6 +59,7 @@ app.use("/api/auth", authRoutes);
 // admin
 app.use("/api/admin/events", AdminEventRoutes);
 app.use("/api/admin/jobs", AdminJobRoutes);
+app.use("/api/admin/news",NewsRoutes)
 
 // user
 app.use("/api/user/events", UserEventRoutes);
@@ -64,6 +67,7 @@ app.use("/api/user/jobs", UserJobRoutes);
 app.use("/api/user/info", UserInfoRoutes);
 app.use("/api/user/connect", ConnectionRoutes);
 app.use("/api/user/message", messageRoutes);
+app.use("/api/user/news",UserNewRoutes)
 
 
 /* ----------------- SOCKET SETUP ----------------- */
@@ -80,7 +84,6 @@ const io = new Server(server, {
 app.set("io", io);
 
 initSocket(io);
-
 
 const PORT = process.env.PORT || 5000;
 
