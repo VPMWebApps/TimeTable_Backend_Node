@@ -62,29 +62,23 @@ async function uploadFileToCloudinary(fileBuffer, mimetype, originalname) {
     uploadStream.end(fileBuffer);
   });
 }
-// ── Upload any file to Cloudinary ──
-// async function uploadFileToCloudinary(fileBuffer, mimetype, originalname) {
-//   return new Promise((resolve, reject) => {
-//     const resourceType = mimetype.startsWith("image/") ? "image"
-//       : mimetype.startsWith("video/") ? "video"
-//       : mimetype.startsWith("audio/") ? "video" // Cloudinary uses "video" for audio too
-//       : "raw";
 
-//     const uploadStream = cloudinary.uploader.upload_stream(
-//       {
-//         folder: "messages",
-//         resource_type: resourceType,
-//         public_id: `${Date.now()}_${originalname.replace(/\s+/g, "_")}`,
-//       },
-//       (error, result) => {
-//         if (error) reject(error);
-//         else resolve(result);
-//       }
-//     );
+async function uploadGalleryPhoto(fileBuffer, mimetype) {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: "gallery",
+        resource_type: "image",
+      },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      }
+    );
+    uploadStream.end(fileBuffer);
+  });
+}
 
-//     uploadStream.end(fileBuffer);
-//   });
-// }
 
 // ── Legacy image helper (keep for other features) ──
 async function handleImageUploadUtil(fileBuffer, mimetype) {
@@ -96,8 +90,8 @@ async function handleImageUploadUtil(fileBuffer, mimetype) {
   });
   return result;
 }
+module.exports = { cloudinary, upload, handleImageUploadUtil, uploadFileToCloudinary, uploadGalleryPhoto };
 
-module.exports = { cloudinary, upload, handleImageUploadUtil, uploadFileToCloudinary };
 
 // const { v2: cloudinary } = require("cloudinary");
 // const multer = require("multer");

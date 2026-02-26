@@ -17,6 +17,8 @@ const ConnectionRoutes = require("./routes/UserRoutes/ConnectionRoutes")
 const messageRoutes = require("./routes/UserRoutes/MessageRoutes");
 const NewsRoutes = require("./routes/adminRoutes/AdminNewsRouts")
 const UserNewRoutes = require("./routes/UserRoutes/UserNewsRoutes")
+const AdminGalleryRoutes = require("./routes/adminRoutes/AdminGalleryRoutes")
+const UserGalleryRoutes = require("./routes/UserRoutes/GalleryRoutes")
 
 const { initSocket } = require("./socket"); 
 
@@ -60,6 +62,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/admin/events", AdminEventRoutes);
 app.use("/api/admin/jobs", AdminJobRoutes);
 app.use("/api/admin/news",NewsRoutes)
+app.use("/api/admin/gallery",AdminGalleryRoutes)
 
 // user
 app.use("/api/user/events", UserEventRoutes);
@@ -68,6 +71,7 @@ app.use("/api/user/info", UserInfoRoutes);
 app.use("/api/user/connect", ConnectionRoutes);
 app.use("/api/user/message", messageRoutes);
 app.use("/api/user/news",UserNewRoutes)
+app.use("/api/user/gallery",UserGalleryRoutes)
 
 
 /* ----------------- SOCKET SETUP ----------------- */
