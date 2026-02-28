@@ -9,6 +9,8 @@ const {
 const { upload }         = require("../../helpers/Cloudinary");
 const { authMiddleware }  = require("../../controllers/auth/authController");
 
+
+router.use(authMiddleware);
 router.get("/albums",          getApprovedAlbums);
 router.get("/albums/:id/photos", getAlbumPhotos);
 
