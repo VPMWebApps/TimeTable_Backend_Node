@@ -1,10 +1,10 @@
     const express = require("express");
     const router = express.Router();
     const { upload } = require("../../helpers/Cloudinary");
-    // const { authMiddleware } = require("../../controllers/auth/authController");
+    const { authMiddleware } = require("../../controllers/auth/authController");
     const { getMyProfile, upsertProfile, uploadProfileImage, getUserProfile, handleProfileImageUpload, createOrUpdateUserProfile, deleteUserProfile, getAllUserProfiles } = require("../../controllers/user/UserInfoController");
 
-    // router.use(authMiddleware)
+    router.use(authMiddleware)
 
     // Image upload route
     router.post("/upload-image", upload.single("my_file"), handleProfileImageUpload);
