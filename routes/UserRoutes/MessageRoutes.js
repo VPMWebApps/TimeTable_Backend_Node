@@ -10,6 +10,7 @@ const { upload } = require("../../helpers/Cloudinary");
 
 
 router.use(authMiddleware);
+
 router.get("/conversations",  getConversations);
 
 // ── Send message with proper multer error handling ──
