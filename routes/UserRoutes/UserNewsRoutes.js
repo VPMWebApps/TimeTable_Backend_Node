@@ -5,6 +5,9 @@ const {
   getPublicNewsById,
   getLatestNews,
 } = require("../../controllers/user/UserNewController");
+const { authMiddleware } = require("../../controllers/auth/authController");
+
+router.use(authMiddleware);
 
 /* Public — no auth required */
 router.get("/latest", getLatestNews);      // GET /api/user/news/latest

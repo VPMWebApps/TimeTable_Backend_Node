@@ -87,7 +87,6 @@ exports.getUserProfile = async (req, res) => {
 };
 
 
-
 /* ===============================
    CREATE/UPDATE USER PROFILE
 =============================== */

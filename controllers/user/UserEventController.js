@@ -113,7 +113,6 @@ const getFilteredEvents = async (req, res) => {
   }
 };
 
-
 const getEventDetails = async (req, res) => {
   try {
     const { id } = req.params;
@@ -207,9 +206,48 @@ const registerForEvent = async (req, res) => {
   }
 };
 
+// ✅ Updated controller with pagination
+const getMyRegisteredEvents = async (req, res) => {
+  try {
+    const email = req.user?.email;
+    if (!email) return res.status(401).json({ success: false, message: "Unauthorized" });
 
+    let page  = parseInt(req.query.page)  || 1;
+    let limit = parseInt(req.query.limit) || 5;
+    let skip  = (page - 1) * limit;
+
+    const totalRegistrations = await EventRegistration.countDocuments({ email });
+
+    const registrations = await EventRegistration.find({ email })
+      .sort({ registeredAt: -1 })
+      .skip(skip)           // ✅ add skip
+      .limit(limit);        // ✅ add limit
+
+    const eventIds = registrations.map((r) => r.eventId);
+    const events   = await Event.find({ _id: { $in: eventIds } });
+
+    const enriched = events.map((event) => {
+      const reg = registrations.find(
+        (r) => r.eventId.toString() === event._id.toString()
+      );
+      return { ...event.toObject(), registeredAt: reg?.registeredAt };
+    });
+
+    res.status(200).json({
+      success: true,
+      events: enriched,
+      currentPage: page,
+      totalPages: Math.ceil(totalRegistrations / limit),  // ✅
+      totalEvents: totalRegistrations,                     // ✅
+    });
+  } catch (err) {
+    console.error("❌ getMyRegisteredEvents:", err);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
 module.exports = {
   getFilteredEvents,
   getEventDetails,
   registerForEvent,
+  getMyRegisteredEvents, // 👈 add this
 };
