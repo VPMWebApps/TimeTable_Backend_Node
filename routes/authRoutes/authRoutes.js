@@ -23,7 +23,7 @@ router.get("/test-auth",authMiddleware, (req, res) => {
   });
 });
 
-router.get("/alumni", authMiddleware, getAllAlumni);
+router.get("/alumni",  getAllAlumni);
 
 
 module.exports = router;
