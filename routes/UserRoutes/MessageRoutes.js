@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-// const { authMiddleware } = require("../../controllers/auth/authController");
+const { authMiddleware } = require("../../controllers/auth/authController");
 const {
   sendMessage, getMessages, getConversations, markAsRead,
   editMessage, deleteMessageForMe, deleteMessageForEveryone,
@@ -8,6 +8,8 @@ const {
 } = require("../../controllers/user/MessageController");
 const { upload } = require("../../helpers/Cloudinary");
 
+
+router.use(authMiddleware);
 router.get("/conversations",  getConversations);
 
 // ── Send message with proper multer error handling ──

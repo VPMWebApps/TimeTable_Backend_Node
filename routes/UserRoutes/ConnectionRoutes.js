@@ -11,9 +11,9 @@ const {
   getOutgoingRequests,
 } = require("../../controllers/user/ConnectonController");
 
-// const { authMiddleware } = require("../../controllers/auth/authController");
+const { authMiddleware } = require("../../controllers/auth/authController");
 
-// router.use(authMiddleware)
+router.use(authMiddleware)
 
 // Send connection request
 router.post("/send", sendConnectionRequest);
