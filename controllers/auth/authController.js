@@ -3,6 +3,8 @@ const jwt = require("jsonwebtoken");
 const { User, STREAMS } = require("../../models/user.model");
 const UserInfo = require("../../models/UserInfo.model");
 
+const isProd = process.env.NODE_ENV === "production";
+
 /* ─────────────────────────────────────────
    HELPER: parse MongoDB duplicate key error
 ───────────────────────────────────────── */
@@ -24,7 +26,6 @@ exports.registerUser = async (req, res) => {
   try {
     const { fullname, username, batch, stream, phoneno, email, password } = req.body;
 
-    // ── Required fields ──
     if (!fullname?.trim()) return res.status(400).json({ success: false, message: "Full name is required." });
     if (!username?.trim()) return res.status(400).json({ success: false, message: "Username is required." });
     if (!email?.trim()) return res.status(400).json({ success: false, message: "Email is required." });
@@ -33,7 +34,6 @@ exports.registerUser = async (req, res) => {
     if (!stream) return res.status(400).json({ success: false, message: "Stream is required." });
     if (!batch) return res.status(400).json({ success: false, message: "Graduation year is required." });
 
-    // ── Field validation ──
     if (password.length < 6) {
       return res.status(400).json({ success: false, message: "Password must be at least 6 characters." });
     }
@@ -53,7 +53,6 @@ exports.registerUser = async (req, res) => {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    // ── Check existing email ──
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return res.status(409).json({ success: false, message: "An account with this email already exists." });
@@ -78,13 +77,11 @@ exports.registerUser = async (req, res) => {
   } catch (err) {
     console.error("Register error:", err);
 
-    // Duplicate key (phone, username, or any other unique field)
     const dupMessage = parseDuplicateKeyError(err);
     if (dupMessage) {
       return res.status(409).json({ success: false, message: dupMessage });
     }
 
-    // Mongoose validation error
     if (err.name === "ValidationError") {
       const message = Object.values(err.errors).map(e => e.message).join(" ");
       return res.status(400).json({ success: false, message });
@@ -126,11 +123,12 @@ exports.loginUser = async (req, res) => {
       { expiresIn: "1d" }
     );
 
+    // ✅ FIXED: secure + sameSite:none required for cross-origin cookies on Render
     res.cookie("token", token, {
       httpOnly: true,
-      secure: false,
-      sameSite: "lax",
-      maxAge: 24 * 60 * 60 * 1000,
+      secure: isProd,                      // true in production (HTTPS)
+      sameSite: isProd ? "none" : "lax",   // "none" required for cross-origin
+      maxAge: 24 * 60 * 60 * 1000,         // 1 day
     }).json({
       success: true,
       message: "Logged in successfully!",
@@ -240,10 +238,11 @@ exports.getAllAlumni = async (req, res) => {
 ───────────────────────────────────────── */
 exports.logout = (req, res) => {
   try {
+    // ✅ FIXED: must match the same cookie options used when setting it
     res.clearCookie("token", {
       httpOnly: true,
-      secure: false,
-      sameSite: "lax",
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
     }).json({ success: true, message: "Logged out successfully!" });
   } catch (err) {
     console.error("Logout error:", err);

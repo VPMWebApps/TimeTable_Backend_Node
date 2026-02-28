@@ -13,14 +13,14 @@ const AdminJobRoutes = require("./routes/adminRoutes/AdminJobRoutes");
 const UserEventRoutes = require("./routes/UserRoutes/UserEventRoutes");
 const UserJobRoutes = require("./routes/UserRoutes/UserJobRoutes");
 const UserInfoRoutes = require("./routes/UserRoutes/UserInfoRoutes");
-const ConnectionRoutes = require("./routes/UserRoutes/ConnectionRoutes")
+const ConnectionRoutes = require("./routes/UserRoutes/ConnectionRoutes");
 const messageRoutes = require("./routes/UserRoutes/MessageRoutes");
-const NewsRoutes = require("./routes/adminRoutes/AdminNewsRouts")
-const UserNewRoutes = require("./routes/UserRoutes/UserNewsRoutes")
-const AdminGalleryRoutes = require("./routes/adminRoutes/AdminGalleryRoutes")
-const UserGalleryRoutes = require("./routes/UserRoutes/GalleryRoutes")
+const NewsRoutes = require("./routes/adminRoutes/AdminNewsRouts");
+const UserNewRoutes = require("./routes/UserRoutes/UserNewsRoutes");
+const AdminGalleryRoutes = require("./routes/adminRoutes/AdminGalleryRoutes");
+const UserGalleryRoutes = require("./routes/UserRoutes/GalleryRoutes");
 
-const { initSocket } = require("./socket"); 
+const { initSocket } = require("./socket");
 
 dotenv.config();
 
@@ -35,9 +35,22 @@ mongoose
 
 /* ----------------- MIDDLEWARE ----------------- */
 
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  process.env.CLIENT_URL,   // your production frontend URL from .env
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: process.env.CLIENT_URL,
+    origin: (origin, callback) => {
+      // allow requests with no origin (Postman, mobile apps, server-to-server)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS blocked for origin: ${origin}`));
+      }
+    },
     methods: ["GET", "POST", "DELETE", "PUT", "PATCH"],
     allowedHeaders: [
       "Content-Type",
@@ -46,7 +59,7 @@ app.use(
       "Expires",
       "Pragma",
     ],
-    credentials: true,
+    credentials: true,  // required for cookies cross-origin
   })
 );
 
@@ -61,8 +74,8 @@ app.use("/api/auth", authRoutes);
 // admin
 app.use("/api/admin/events", AdminEventRoutes);
 app.use("/api/admin/jobs", AdminJobRoutes);
-app.use("/api/admin/news",NewsRoutes)
-app.use("/api/admin/gallery",AdminGalleryRoutes)
+app.use("/api/admin/news", NewsRoutes);
+app.use("/api/admin/gallery", AdminGalleryRoutes);
 
 // user
 app.use("/api/user/events", UserEventRoutes);
@@ -70,17 +83,16 @@ app.use("/api/user/jobs", UserJobRoutes);
 app.use("/api/user/info", UserInfoRoutes);
 app.use("/api/user/connect", ConnectionRoutes);
 app.use("/api/user/message", messageRoutes);
-app.use("/api/user/news",UserNewRoutes)
-app.use("/api/user/gallery",UserGalleryRoutes)
-
+app.use("/api/user/news", UserNewRoutes);
+app.use("/api/user/gallery", UserGalleryRoutes);
 
 /* ----------------- SOCKET SETUP ----------------- */
 
 const server = http.createServer(app);
 
-const io = new Server(server, { 
+const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL,
+    origin: allowedOrigins,   // reuse same allowed origins array
     credentials: true,
   },
 });
