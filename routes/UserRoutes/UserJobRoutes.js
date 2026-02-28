@@ -7,7 +7,7 @@ const { applyToJob, getMyApplications, getApplicationsForMyJobs } = require("../
 
 
 router.post("/alumni/jobs/create", authMiddleware, createJob);
-router.get("/alumni/jobs/get", authMiddleware, getPublicJobs);
+router.get("/alumni/jobs/get",  getPublicJobs);
 
 
 //apply routes

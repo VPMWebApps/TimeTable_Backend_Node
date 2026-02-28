@@ -1,9 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const { getFilteredEvents, getEventDetails, registerForEvent, getMyRegisteredEvents } = require("../../controllers/user/UserEventController");
-const { authMiddleware }  = require("../../controllers/auth/authController");
+// const { authMiddleware }  = require("../../controllers/auth/authController");
 
-router.use(authMiddleware);
 
 router.get("/filter", getFilteredEvents);
 router.get("/get/:id", getEventDetails);
