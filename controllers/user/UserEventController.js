@@ -210,41 +210,66 @@ const registerForEvent = async (req, res) => {
 const getMyRegisteredEvents = async (req, res) => {
   try {
     const email = req.user?.email;
-    if (!email) return res.status(401).json({ success: false, message: "Unauthorized" });
+    if (!email)
+      return res.status(401).json({ success: false, message: "Unauthorized" });
 
     let page  = parseInt(req.query.page)  || 1;
     let limit = parseInt(req.query.limit) || 5;
     let skip  = (page - 1) * limit;
 
-    const totalRegistrations = await EventRegistration.countDocuments({ email });
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    const registrations = await EventRegistration.find({ email })
-      .sort({ registeredAt: -1 })
-      .skip(skip)           // ✅ add skip
-      .limit(limit);        // ✅ add limit
+    // ── Step 1: Get ALL registration records for this user (no pagination yet)
+    // We need all of them so we can join with events and filter by date BEFORE paginating.
+    // Paginating registrations first and then filtering events causes wrong page sizes and counts.
+    const allRegistrations = await EventRegistration.find({ email }).sort({
+      registeredAt: -1,
+    });
 
-    const eventIds = registrations.map((r) => r.eventId);
-    const events   = await Event.find({ _id: { $in: eventIds } });
+    if (allRegistrations.length === 0) {
+      return res.status(200).json({
+        success: true,
+        events: [],
+        currentPage: 1,
+        totalPages: 1,
+        totalEvents: 0,
+      });
+    }
 
-    const enriched = events.map((event) => {
-      const reg = registrations.find(
+    // ── Step 2: Fetch only UPCOMING events from those registrations
+    const allEventIds = allRegistrations.map((r) => r.eventId);
+
+    const upcomingEvents = await Event.find({
+      _id: { $in: allEventIds },
+      date: { $gte: today }, // ← only upcoming events
+    }).sort({ date: 1 }); // soonest first
+
+    // ── Step 3: Enrich each upcoming event with registeredAt from the registration record
+    const enriched = upcomingEvents.map((event) => {
+      const reg = allRegistrations.find(
         (r) => r.eventId.toString() === event._id.toString()
       );
       return { ...event.toObject(), registeredAt: reg?.registeredAt };
     });
 
+    // ── Step 4: NOW paginate the enriched upcoming list
+    const totalUpcoming = enriched.length;
+    const paginated     = enriched.slice(skip, skip + limit);
+
     res.status(200).json({
       success: true,
-      events: enriched,
+      events: paginated,
       currentPage: page,
-      totalPages: Math.ceil(totalRegistrations / limit),  // ✅
-      totalEvents: totalRegistrations,                     // ✅
+      totalPages: Math.ceil(totalUpcoming / limit) || 1,
+      totalEvents: totalUpcoming,
     });
   } catch (err) {
     console.error("❌ getMyRegisteredEvents:", err);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
+
 module.exports = {
   getFilteredEvents,
   getEventDetails,
