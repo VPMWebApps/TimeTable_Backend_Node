@@ -2,18 +2,25 @@ const mongoose = require("mongoose");
 const Connection = require("../../models/Connection.model");
 const { emitToUser } = require("../../socket");
 
+// ─── Helper: populate both parties and return the "other user" shape ──────────
+// Reused by accept and send so both always return a fully populated connection
+// in the same normalised shape the frontend expects.
+const populateConnection = (connectionId) =>
+  Connection.findById(connectionId).populate(
+    "requester recipient",
+    "fullname username email profilePicture jobTitle company stream batch linkedin role"
+  );
 
+// ─── Send connection request ───────────────────────────────────────────────────
 exports.sendConnectionRequest = async (req, res) => {
   try {
     const io = req.app.get("io");
-
     const requesterId = req.user.id;
     const { recipientId } = req.body;
 
     if (!recipientId || !mongoose.Types.ObjectId.isValid(recipientId)) {
       return res.status(400).json({ message: "Invalid recipient" });
     }
-
     if (requesterId === recipientId) {
       return res.status(400).json({ message: "Cannot connect to yourself" });
     }
@@ -26,7 +33,6 @@ exports.sendConnectionRequest = async (req, res) => {
     });
 
     if (existing) {
-      // Already connected
       if (existing.status === "ACCEPTED") {
         return res.status(409).json({ message: "Already connected" });
       }
@@ -36,57 +42,46 @@ exports.sendConnectionRequest = async (req, res) => {
         existing.status === "PENDING" &&
         existing.recipient.equals(requesterId)
       ) {
-        const updated = await Connection.findOneAndUpdate(
-          {
-            _id: existing._id,
-            status: "PENDING",
-          },
-          {
-            status: "ACCEPTED",
-            respondedAt: new Date(),
-          },
-          { new: true }
-        );
+        await Connection.findByIdAndUpdate(existing._id, {
+          status: "ACCEPTED",
+          respondedAt: new Date(),
+        });
 
-        // 🔔 Notify original requester
-        emitToUser(io, updated.requester, "connection_accepted", {
-          connectionId: updated._id,
-          by: requesterId,
+        // FIX: populate before returning so frontend gets full user objects
+        const populated = await populateConnection(existing._id);
+
+        // FIX: use colon-style event name consistently
+        emitToUser(io, populated.requester._id, "connection:accepted", {
+          connection: populated,
         });
 
         return res.json({
           message: "Connection auto-accepted",
-          connection: updated,
+          connection: populated,
         });
       }
 
       if (existing.status === "PENDING") {
-        return res.status(409).json({
-          message: "Connection request already pending",
-        });
+        return res.status(409).json({ message: "Connection request already pending" });
       }
 
       if (existing.status === "REJECTED") {
-        const updated = await Connection.findOneAndUpdate(
-          { _id: existing._id },
-          {
-            requester: requesterId,
-            recipient: recipientId,
-            status: "PENDING",
-            respondedAt: null,
-          },
-          { new: true }
-        );
+        await Connection.findByIdAndUpdate(existing._id, {
+          requester: requesterId,
+          recipient: recipientId,
+          status: "PENDING",
+          respondedAt: null,
+        });
 
-        // 🔔 Notify recipient
-        emitToUser(io, recipientId, "connection_request", {
-          connectionId: updated._id,
-          from: requesterId,
+        const populated = await populateConnection(existing._id);
+
+        emitToUser(io, recipientId, "connection:request", {
+          connection: populated,
         });
 
         return res.json({
           message: "Connection request re-sent",
-          connection: updated,
+          connection: populated,
         });
       }
 
@@ -101,33 +96,31 @@ exports.sendConnectionRequest = async (req, res) => {
       status: "PENDING",
     });
 
-    // 🔔 Notify recipient
-    emitToUser(io, recipientId, "connection_request", {
-      connectionId: connection._id,
-      from: requesterId,
+    // FIX: populate before returning
+    const populated = await populateConnection(connection._id);
+
+    emitToUser(io, recipientId, "connection:request", {
+      connection: populated,
     });
 
     return res.status(201).json({
       message: "Connection request sent",
-      connection,
+      connection: populated,
     });
 
   } catch (err) {
     if (err.code === 11000) {
-      return res.status(409).json({
-        message: "Connection already exists",
-      });
+      return res.status(409).json({ message: "Connection already exists" });
     }
-
     console.error("Send Connection Error:", err);
     return res.status(500).json({ message: "Server error" });
   }
 };
 
+// ─── Accept connection ─────────────────────────────────────────────────────────
 exports.acceptConnection = async (req, res) => {
   try {
     const io = req.app.get("io");
-
     const userId = req.user.id;
     const { connectionId } = req.params;
 
@@ -136,33 +129,28 @@ exports.acceptConnection = async (req, res) => {
     }
 
     const updated = await Connection.findOneAndUpdate(
-      {
-        _id: connectionId,
-        recipient: userId,
-        status: "PENDING",
-      },
-      {
-        status: "ACCEPTED",
-        respondedAt: new Date(),
-      },
+      { _id: connectionId, recipient: userId, status: "PENDING" },
+      { status: "ACCEPTED", respondedAt: new Date() },
       { new: true }
     );
 
     if (!updated) {
-      return res.status(400).json({
-        message: "Invalid or already processed request",
-      });
+      return res.status(400).json({ message: "Invalid or already processed request" });
     }
 
-    // 🔔 Notify requester
-    emitToUser(io, updated.requester, "connection_accepted", {
-      connectionId: updated._id,
-      by: userId,
+    // FIX: populate so both sides get full user objects in the socket payload
+    // and in the HTTP response — this is what was missing before.
+    const populated = await populateConnection(updated._id);
+
+    // FIX: use colon-style event name; emit full populated connection so User A
+    // can immediately update their Redux state without a page refresh.
+    emitToUser(io, populated.requester._id, "connection:accepted", {
+      connection: populated,
     });
 
     return res.json({
       message: "Connection accepted",
-      connection: updated,
+      connection: populated,   // ← now has requester/recipient as full user objects
     });
 
   } catch (err) {
@@ -171,10 +159,10 @@ exports.acceptConnection = async (req, res) => {
   }
 };
 
+// ─── Reject connection ─────────────────────────────────────────────────────────
 exports.rejectConnection = async (req, res) => {
   try {
     const io = req.app.get("io");
-
     const userId = req.user.id;
     const { connectionId } = req.params;
 
@@ -183,34 +171,21 @@ exports.rejectConnection = async (req, res) => {
     }
 
     const updated = await Connection.findOneAndUpdate(
-      {
-        _id: connectionId,
-        recipient: userId,
-        status: "PENDING",
-      },
-      {
-        status: "REJECTED",
-        respondedAt: new Date(),
-      },
+      { _id: connectionId, recipient: userId, status: "PENDING" },
+      { status: "REJECTED", respondedAt: new Date() },
       { new: true }
     );
 
     if (!updated) {
-      return res.status(400).json({
-        message: "Invalid or already processed request",
-      });
+      return res.status(400).json({ message: "Invalid or already processed request" });
     }
 
-    // 🔔 Notify requester
-    emitToUser(io, updated.requester, "connection_rejected", {
+    emitToUser(io, updated.requester, "connection:rejected", {
       connectionId: updated._id,
       by: userId,
     });
 
-    return res.json({
-      message: "Connection rejected",
-      connection: updated,
-    });
+    return res.json({ message: "Connection rejected", connection: updated });
 
   } catch (err) {
     console.error("Reject Connection Error:", err);
@@ -218,26 +193,21 @@ exports.rejectConnection = async (req, res) => {
   }
 };
 
+// ─── Remove connection ─────────────────────────────────────────────────────────
 exports.removeConnection = async (req, res) => {
   try {
     const io = req.app.get("io");
-
     const userId = req.user.id;
     const { connectionId } = req.params;
 
     const deleted = await Connection.findOneAndDelete({
       _id: connectionId,
       status: "ACCEPTED",
-      $or: [
-        { requester: userId },
-        { recipient: userId }
-      ]
+      $or: [{ requester: userId }, { recipient: userId }],
     });
 
     if (!deleted) {
-      return res.status(400).json({
-        message: "Cannot remove this connection"
-      });
+      return res.status(400).json({ message: "Cannot remove this connection" });
     }
 
     const otherUser =
@@ -245,9 +215,8 @@ exports.removeConnection = async (req, res) => {
         ? deleted.recipient
         : deleted.requester;
 
-    // 🔔 Notify other user
-    emitToUser(io, otherUser, "connection_removed", {
-      connectionId: connectionId,
+    emitToUser(io, otherUser, "connection:removed", {
+      connectionId,
       by: userId,
     });
 
@@ -259,6 +228,7 @@ exports.removeConnection = async (req, res) => {
   }
 };
 
+// ─── Get accepted connections ──────────────────────────────────────────────────
 exports.getAcceptedConnections = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -266,66 +236,73 @@ exports.getAcceptedConnections = async (req, res) => {
 
     const connections = await Connection.find({
       status: "ACCEPTED",
-      $or: [
-        { requester: userId },
-        { recipient: userId }
-      ]
+      $or: [{ requester: userId }, { recipient: userId }],
     })
-      .populate("requester recipient", "fullname username profileImage")
+      // FIX: was populating "profileImage" — changed to "profilePicture" to match
+      // the field name used everywhere in the frontend (profilePicture).
+      .populate(
+        "requester recipient",
+        "fullname username email profilePicture jobTitle company stream batch linkedin role"
+      )
       .skip((page - 1) * limit)
       .limit(Number(limit))
       .sort({ updatedAt: -1 });
 
-    const formatted = connections.map(conn => {
+    const formatted = connections.map((conn) => {
       const otherUser =
-        conn.requester._id.toString() === userId
-          ? conn.recipient
-          : conn.requester;
+        conn.requester._id.toString() === userId ? conn.recipient : conn.requester;
 
       return {
-        id: conn._id,
-        user: otherUser,
-        connectedAt: conn.respondedAt
+        // FIX: was returning `id` (without underscore) which broke removeConnection
+        // filtering (`conn._id !== connectionId` was always true because _id was undefined).
+        _id: conn._id,
+        user: otherUser,           // full populated user object — getConnectionStatus needs user._id
+        connectedAt: conn.respondedAt,
       };
     });
 
     return res.json(formatted);
+
   } catch (err) {
     console.error("List Accepted Error:", err);
     return res.status(500).json({ message: "Server error" });
   }
 };
 
+// ─── Get incoming requests ─────────────────────────────────────────────────────
 exports.getIncomingRequests = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const requests = await Connection.find({
-      recipient: userId,
-      status: "PENDING"
-    })
-      .populate("requester", "fullname username profileImage")
+    const requests = await Connection.find({ recipient: userId, status: "PENDING" })
+      .populate(
+        "requester",
+        "fullname username email profilePicture jobTitle company stream batch linkedin role"
+      )
       .sort({ createdAt: -1 });
 
     return res.json(requests);
+
   } catch (err) {
     console.error("Incoming Requests Error:", err);
     return res.status(500).json({ message: "Server error" });
   }
 };
 
+// ─── Get outgoing requests ─────────────────────────────────────────────────────
 exports.getOutgoingRequests = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const requests = await Connection.find({
-      requester: userId,
-      status: "PENDING"
-    })
-      .populate("recipient", "fullname username profileImage")
+    const requests = await Connection.find({ requester: userId, status: "PENDING" })
+      .populate(
+        "recipient",
+        "fullname username email profilePicture jobTitle company stream batch linkedin role"
+      )
       .sort({ createdAt: -1 });
 
     return res.json(requests);
+
   } catch (err) {
     console.error("Outgoing Requests Error:", err);
     return res.status(500).json({ message: "Server error" });
