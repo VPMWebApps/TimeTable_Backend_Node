@@ -1,165 +1,109 @@
 // controllers/admin/job.controller.js
 const mongoose = require("mongoose");
 const Job = require("../../models/Job.models");
+const Application = require("../../models/Application.model");
 
 exports.getPendingJobs = async (req, res) => {
   try {
     if (req.user?.role !== "admin") {
-      return res.status(403).json({
-        success: false,
-        message: "Unauthorized",
-      });
+      return res.status(403).json({ success: false, message: "Unauthorized" });
     }
 
-    /* ================= QUERY PARAMS ================= */
-
-    const page = Math.max(Number(req.query.page) || 1, 1);
+    const page  = Math.max(Number(req.query.page)  || 1, 1);
     const limit = Math.min(Number(req.query.limit) || 10, 50);
-    const skip = (page - 1) * limit;
+    const skip  = (page - 1) * limit;
 
-    const {
-      employmentType,
-      workMode,
-      experienceLevel,
-      city,
-      search,
-    } = req.query;
-
-    /* ================= BASE FILTER ================= */
+    const { employmentType, workMode, experienceLevel, city, search } = req.query;
 
     const filter = { status: "pending" };
 
-    if (employmentType) filter.employmentType = employmentType;
-    if (workMode) filter.workMode = workMode;
-    if (experienceLevel) filter.experienceLevel = experienceLevel;
-    if (city) filter["location.city"] = new RegExp(`^${city}`, "i");
+    if (employmentType)  filter.employmentType        = employmentType;
+    if (workMode)        filter.workMode              = workMode;
+    if (experienceLevel) filter.experienceLevel       = experienceLevel;
+    if (city)            filter["location.city"]      = new RegExp(`^${city}`, "i");
 
     if (search) {
       filter.$or = [
-        { title: new RegExp(search, "i") },
-        { companyName: new RegExp(search, "i") },
+        { title:               new RegExp(search, "i") },
+        { companyName:         new RegExp(search, "i") },
         { "postedBy.username": new RegExp(search, "i") },
-        { "postedBy.email": new RegExp(search, "i") },
+        { "postedBy.email":    new RegExp(search, "i") },
       ];
     }
 
-    /* ================= QUERY ================= */
-
     const [jobs, total] = await Promise.all([
-      Job.find(filter)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
+      Job.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
       Job.countDocuments(filter),
     ]);
 
     res.json({
       success: true,
       data: jobs,
-      pagination: {
-        total,
-        page,
-        pages: Math.ceil(total / limit),
-        limit,
-      },
+      pagination: { total, page, pages: Math.ceil(total / limit), limit },
     });
   } catch (err) {
     console.error("ADMIN JOB FETCH ERROR:", err);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch pending jobs",
-    });
+    res.status(500).json({ success: false, message: "Failed to fetch pending jobs" });
   }
 };
 
 exports.updatePendingJob = async (req, res) => {
   try {
     if (req.user?.role !== "admin") {
-      return res.status(403).json({
-        success: false,
-        message: "Unauthorized",
-      });
+      return res.status(403).json({ success: false, message: "Unauthorized" });
     }
 
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid job ID",
-      });
+      return res.status(400).json({ success: false, message: "Invalid job ID" });
     }
 
     const job = await Job.findOne({ _id: id, status: "pending" });
     if (!job) {
-      return res.status(404).json({
-        success: false,
-        message: "Only pending jobs can be edited",
-      });
+      return res.status(404).json({ success: false, message: "Only pending jobs can be edited" });
     }
 
-    /* ================= ALLOWED FIELDS ================= */
     const allowedFields = [
-      "title",
-      "companyName",
-      "employmentType",
-      "workMode",
-      "experienceLevel",
-      "openings",
-      "location",
-      "salary",
+      "title", "companyName", "employmentType", "workMode",
+      "experienceLevel", "openings", "location", "salary",
+      "applicationType", "externalLink", // ✅ added
     ];
 
     allowedFields.forEach((field) => {
-      if (req.body[field] !== undefined) {
-        job[field] = req.body[field];
-      }
+      if (req.body[field] !== undefined) job[field] = req.body[field];
     });
+
+    // Clear externalLink if switching back to form
+    if (job.applicationType === "form") job.externalLink = undefined;
 
     await job.save();
 
-    res.json({
-      success: true,
-      data: job,
-    });
+    res.json({ success: true, data: job });
   } catch (err) {
     console.error("ADMIN EDIT JOB ERROR:", err);
-    res.status(500).json({
-      success: false,
-      message: "Failed to update job",
-    });
+    res.status(500).json({ success: false, message: "Failed to update job" });
   }
 };
 
 exports.updateJobStatus = async (req, res) => {
   try {
     if (req.user?.role !== "admin") {
-      return res.status(403).json({
-        success: false,
-        message: "Unauthorized",
-      });
+      return res.status(403).json({ success: false, message: "Unauthorized" });
     }
 
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid job ID",
-      });
+      return res.status(400).json({ success: false, message: "Invalid job ID" });
     }
 
     const { status } = req.body;
 
     if (!["approved", "rejected"].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid status",
-      });
+      return res.status(400).json({ success: false, message: "Invalid status" });
     }
 
-    // ✅ enforce valid transition: pending → approved/rejected
     const job = await Job.findOneAndUpdate(
       { _id: id, status: "pending" },
       { status },
@@ -167,67 +111,46 @@ exports.updateJobStatus = async (req, res) => {
     ).lean();
 
     if (!job) {
-      return res.status(404).json({
-        success: false,
-        message: "Job not found or already reviewed",
-      });
+      return res.status(404).json({ success: false, message: "Job not found or already reviewed" });
     }
 
-    res.json({
-      success: true,
-      data: job,
-    });
+    res.json({ success: true, data: job });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: "Failed to update job status",
-    });
+    res.status(500).json({ success: false, message: "Failed to update job status" });
   }
 };
 
 exports.createJobAsAdmin = async (req, res) => {
   try {
-    // Only admin can use this endpoint
     if (req.user?.role !== "admin") {
-      return res.status(403).json({
-        success: false,
-        message: "Only admins can use this endpoint",
-      });
+      return res.status(403).json({ success: false, message: "Only admins can use this endpoint" });
     }
 
     const {
-      title,
-      companyName,
-      employmentType,
-      workMode,
-      experienceLevel,
-      openings = 1,
-      location,
-      salary,
+      title, companyName, employmentType, workMode, experienceLevel,
+      openings = 1, location, salary,
+      applicationType = "form", externalLink,
     } = req.body;
 
-    // Validation
-    if (
-      !title ||
-      !companyName ||
-      !employmentType ||
-      !workMode ||
-      !experienceLevel
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing required job fields",
-      });
+    if (!title || !companyName || !employmentType || !workMode || !experienceLevel) {
+      return res.status(400).json({ success: false, message: "Missing required job fields" });
     }
 
     if (!location?.city) {
-      return res.status(400).json({
-        success: false,
-        message: "City is required",
-      });
+      return res.status(400).json({ success: false, message: "City is required" });
     }
 
-    // Create job with admin as poster
+    if (!["external", "form"].includes(applicationType)) {
+      return res.status(400).json({ success: false, message: "Invalid application type" });
+    }
+
+    if (applicationType === "external" && !externalLink) {
+      return res.status(400).json({ success: false, message: "External link is required" });
+    }
+
+    // ✅ Use the current year as batch — satisfies /^[0-9]{4}$/ regex
+    const currentYear = new Date().getFullYear().toString();
+
     const job = await Job.create({
       title,
       companyName,
@@ -237,16 +160,16 @@ exports.createJobAsAdmin = async (req, res) => {
       openings,
       location,
       salary,
-      status: "approved", // ✅ Auto-approved since posted by admin
-
-      // Admin info as poster
+      applicationType,
+      externalLink: applicationType === "external" ? externalLink : undefined,
+      status: "approved",
       postedBy: {
-        userId: req.user._id,
+        userId:   req.user._id,
         username: req.user.username,
-        email: req.user.email,
-        stream: req.user.stream || "Admin",
-        batch: req.user.batch || "N/A",
-        role: "admin", 
+        email:    req.user.email,
+        stream:   req.user.stream || "Administration",
+        batch:    req.user.batch  || currentYear, // ✅ valid 4-digit year, not "N/A"
+        role:     "admin",
       },
     });
 
@@ -257,9 +180,65 @@ exports.createJobAsAdmin = async (req, res) => {
     });
   } catch (err) {
     console.error("ADMIN CREATE JOB ERROR:", err);
-    res.status(400).json({
-      success: false,
-      message: err.message || "Failed to create job",
+    res.status(400).json({ success: false, message: err.message || "Failed to create job" });
+  }
+};
+
+exports.getAdminJobApplications = async (req, res) => {
+  try {
+    if (req.user?.role !== "admin") {
+      return res.status(403).json({ success: false, message: "Unauthorized" });
+    }
+
+    const page  = Math.max(Number(req.query.page)  || 1,  1);
+    const limit = Math.min(Number(req.query.limit) || 10, 50);
+    const skip  = (page - 1) * limit;
+
+    const [adminJobs, totalJobs] = await Promise.all([
+      Job.find({ "postedBy.userId": req.user._id, "postedBy.role": "admin" })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select("_id title companyName createdAt")
+        .lean(),
+      Job.countDocuments({ "postedBy.userId": req.user._id, "postedBy.role": "admin" }),
+    ]);
+
+    if (!adminJobs.length) {
+      return res.json({
+        success: true,
+        data: [],
+        pagination: { total: 0, page, pages: 0, limit },
+      });
+    }
+
+    const jobIds = adminJobs.map((j) => j._id);
+
+    const applications = await Application.find({ job: { $in: jobIds } })
+      .populate("applicant", "fullname email stream batch")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const appsByJob = {};
+    for (const app of applications) {
+      const jid = app.job.toString();
+      if (!appsByJob[jid]) appsByJob[jid] = [];
+      appsByJob[jid].push(app);
+    }
+
+    const data = adminJobs.map((job) => ({
+      ...job,
+      applications:      appsByJob[job._id.toString()] || [],
+      totalApplications: (appsByJob[job._id.toString()] || []).length,
+    }));
+
+    res.json({
+      success: true,
+      data,
+      pagination: { total: totalJobs, page, pages: Math.ceil(totalJobs / limit), limit },
     });
+  } catch (err) {
+    console.error("ADMIN APPLICATIONS FETCH ERROR:", err);
+    res.status(500).json({ success: false, message: "Failed to fetch applications" });
   }
 };
