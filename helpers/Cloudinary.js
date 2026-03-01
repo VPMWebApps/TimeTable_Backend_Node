@@ -8,17 +8,11 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-console.log("Cloudinary ENV:", {
-  name: process.env.CLOUDINARY_CLOUD_NAME,
-  key: process.env.CLOUDINARY_API_KEY,
-  secret: process.env.CLOUDINARY_API_SECRET ? "loaded" : "missing",
-});
-
 const storage = multer.memoryStorage();
 
 const upload = multer({
   storage,
-  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB max
+  limits: { fileSize: 25 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = [
       "image/jpeg", "image/png", "image/gif", "image/webp",
@@ -36,22 +30,24 @@ const upload = multer({
   },
 });
 
-// In your uploadFileToCloudinary function in helpers/Cloudinary.js
-// Change the upload_stream options — add flags: "attachment:false"
-
 async function uploadFileToCloudinary(fileBuffer, mimetype, originalname) {
   return new Promise((resolve, reject) => {
+    // ✅ KEY FIX: Use "image" resource_type for PDFs (not "raw")
+    // Cloudinary serves "raw" assets as private/authenticated by default.
+    // "image" resource_type makes PDFs publicly accessible via their URL
+    // AND enables Cloudinary's inline delivery (no auth required).
     const resourceType = mimetype.startsWith("image/") ? "image"
       : mimetype.startsWith("video/") ? "video"
       : mimetype.startsWith("audio/") ? "video"
+      : mimetype === "application/pdf" ? "image"  // ← PDFs use "image", not "raw"
       : "raw";
 
     const uploadStream = cloudinary.uploader.upload_stream(
       {
-        folder: "resumes",              // separate folder from messages
+        folder: "resumes",
         resource_type: resourceType,
         public_id: `${Date.now()}_${originalname.replace(/\s+/g, "_")}`,
-        flags: "attachment:false",      // ← KEY FIX: serve inline, not as download
+        flags: "attachment:false", // serve inline
       },
       (error, result) => {
         if (error) reject(error);
@@ -79,8 +75,6 @@ async function uploadGalleryPhoto(fileBuffer, mimetype) {
   });
 }
 
-
-// ── Legacy image helper (keep for other features) ──
 async function handleImageUploadUtil(fileBuffer, mimetype) {
   const base64Data = Buffer.from(fileBuffer).toString("base64");
   const dataURI = `data:${mimetype};base64,${base64Data}`;
@@ -90,33 +84,5 @@ async function handleImageUploadUtil(fileBuffer, mimetype) {
   });
   return result;
 }
+
 module.exports = { cloudinary, upload, handleImageUploadUtil, uploadFileToCloudinary, uploadGalleryPhoto };
-
-
-// const { v2: cloudinary } = require("cloudinary");
-// const multer = require("multer");
-
-// // Configure Cloudinary
-// cloudinary.config({
-//   cloud_name: "dbgldur3y",
-//   api_key: "374649195317325",
-//   api_secret:"s2-iP7VGgjGDCA9U_xAxgeYZ7j8",
-// });
-
-// const storage = multer.memoryStorage();
-// const upload = multer({ storage });
-
-// // ✅ Proper helper
-// async function handleImageUploadUtil(fileBuffer, mimetype) {
-//   const base64Data = Buffer.from(fileBuffer).toString("base64");
-//   const dataURI = `data:${mimetype};base64,${base64Data}`;
-
-//   const result = await cloudinary.uploader.upload(dataURI, {
-//     folder: "events", // optional
-//     resource_type: "image",
-//   });
-
-//   return result;
-// }
-
-// module.exports = { cloudinary, upload, handleImageUploadUtil };

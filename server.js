@@ -19,6 +19,8 @@ const NewsRoutes = require("./routes/adminRoutes/AdminNewsRouts");
 const UserNewRoutes = require("./routes/UserRoutes/UserNewsRoutes");
 const AdminGalleryRoutes = require("./routes/adminRoutes/AdminGalleryRoutes");
 const UserGalleryRoutes = require("./routes/UserRoutes/GalleryRoutes");
+const proxyRoutes = require("./routes/adminRoutes/ProxyRoutes")
+
 
 const { initSocket } = require("./socket");
 
@@ -76,6 +78,7 @@ app.use("/api/admin/events", AdminEventRoutes);
 app.use("/api/admin/jobs", AdminJobRoutes);
 app.use("/api/admin/news", NewsRoutes);
 app.use("/api/admin/gallery", AdminGalleryRoutes);
+app.use("/api/admin/proxy", proxyRoutes);
 
 // user
 app.use("/api/user/events", UserEventRoutes);
