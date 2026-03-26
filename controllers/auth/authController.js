@@ -157,7 +157,7 @@ exports.loginUser = async (req, res) => {
 exports.getAllAlumni = async (req, res) => {
   try {
     const page = Number(req.query.page) || 1;
-    const limit = Number(req.query.limit) || 20;
+    const limit = Number(req.query.limit) || 21;
 
     if (page < 1 || limit < 1 || limit > 100) {
       return res.status(400).json({ success: false, message: "Invalid pagination parameters." });
@@ -184,18 +184,19 @@ exports.getAllAlumni = async (req, res) => {
       filter.stream = stream;
     }
 
-    if (search?.trim()) filter.$text = { $search: search.trim() };
+    // ── FIXED: regex partial/case-insensitive search instead of $text ──
+    // $text only matches whole words and requires a text index.
+    // $regex matches partial strings (e.g. "roa" matches "ronaldo").
+    if (search?.trim()) {
+      const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      filter.fullname = { $regex: escaped, $options: "i" };
+    }
 
     const query = User.find(filter)
       .select("fullname username batch stream email phoneno lastLoginAt loginCount createdAt")
       .skip(skip)
-      .limit(limit);
-
-    if (filter.$text) {
-      query.select({ score: { $meta: "textScore" } }).sort({ score: { $meta: "textScore" } });
-    } else {
-      query.sort({ createdAt: -1 });
-    }
+      .limit(limit)
+      .sort({ createdAt: -1 }); // consistent sort; no textScore needed
 
     const [users, total] = await Promise.all([query, User.countDocuments(filter)]);
 
@@ -212,10 +213,10 @@ exports.getAllAlumni = async (req, res) => {
       const profile = profileMap[user._id.toString()];
       return {
         ...user.toObject(),
-        jobTitle: profile?.jobTitle ?? "",
-        linkedin: profile?.linkedin ?? "",
+        jobTitle:       profile?.jobTitle       ?? "",
+        linkedin:       profile?.linkedin       ?? "",
         profilePicture: profile?.profilePicture ?? "",
-        company: profile?.company ?? "",
+        company:        profile?.company        ?? "",
       };
     });
 

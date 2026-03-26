@@ -20,6 +20,9 @@ const UserNewRoutes = require("./routes/UserRoutes/UserNewsRoutes");
 const AdminGalleryRoutes = require("./routes/adminRoutes/AdminGalleryRoutes");
 const UserGalleryRoutes = require("./routes/UserRoutes/GalleryRoutes");
 const proxyRoutes = require("./routes/adminRoutes/ProxyRoutes")
+const AdminFeedbackRoutes = require("./routes/adminRoutes/AdminFeedbackRoutes")
+const UserFeedbackRoutes = require("./routes/UserRoutes/UserFeedbackRoutes");
+
 
 
 const { initSocket } = require("./socket");
@@ -39,6 +42,7 @@ mongoose
 
 const allowedOrigins = [
   "http://localhost:5173",
+  "http://localhost:5174",
   "http://localhost:3000",
   process.env.CLIENT_URL,   // your production frontend URL from .env
 ].filter(Boolean);
@@ -79,6 +83,7 @@ app.use("/api/admin/jobs", AdminJobRoutes);
 app.use("/api/admin/news", NewsRoutes);
 app.use("/api/admin/gallery", AdminGalleryRoutes);
 app.use("/api/admin/proxy", proxyRoutes);
+app.use("/api/admin/feedback", AdminFeedbackRoutes);
 
 // user
 app.use("/api/user/events", UserEventRoutes);
@@ -87,7 +92,7 @@ app.use("/api/user/info", UserInfoRoutes);
 app.use("/api/user/connect", ConnectionRoutes);
 app.use("/api/user/message", messageRoutes);
 app.use("/api/user/news", UserNewRoutes);
-app.use("/api/user/gallery", UserGalleryRoutes);
+app.use("/api/user/feedback", UserFeedbackRoutes);
 
 /* ----------------- SOCKET SETUP ----------------- */
 

@@ -7,7 +7,7 @@ const { handleImageUploadUtil } = require("../../helpers/Cloudinary");
 ───────────────────────────────────────── */
 exports.createNews = async (req, res) => {
   try {
-    const { title, content, excerpt, category, tags, isPublished } = req.body;
+    const { title, content, excerpt, category, tags, isPublished, newsType } = req.body; // 👈 add newsType
 
     if (!title?.trim() || !content?.trim()) {
       return res.status(400).json({ success: false, message: "Title and content are required" });
@@ -29,6 +29,7 @@ exports.createNews = async (req, res) => {
       coverImage,
       category: category || "general",
       tags: tags ? (Array.isArray(tags) ? tags : JSON.parse(tags)) : [],
+      newsType: newsType || "regular",
       isPublished: publish,
       publishedAt: publish ? new Date() : null,
       postedBy: {
@@ -36,6 +37,15 @@ exports.createNews = async (req, res) => {
         name: req.user.fullname || req.user.username || "Admin",
       },
     });
+
+    // Add this BEFORE res.json() in both create and update:
+    if (news.newsType === "main") {
+      await News.updateMany(
+        { newsType: "main", _id: { $ne: news._id } },
+        { $set: { newsType: "regular" } }
+      );
+    }
+
 
     res.status(201).json({ success: true, message: "News created successfully", data: news });
   } catch (err) {
@@ -49,13 +59,13 @@ exports.createNews = async (req, res) => {
 ───────────────────────────────────────── */
 exports.getAllNewsAdmin = async (req, res) => {
   try {
-    const page  = Math.max(Number(req.query.page)  || 1, 1);
+    const page = Math.max(Number(req.query.page) || 1, 1);
     const limit = Math.min(Number(req.query.limit) || 10, 50);
-    const skip  = (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
     const query = {};
 
-    if (req.query.category)    query.category = req.query.category;
+    if (req.query.category) query.category = req.query.category;
     if (req.query.isPublished !== undefined && req.query.isPublished !== "") {
       query.isPublished = req.query.isPublished === "true";
     }
@@ -109,18 +119,27 @@ exports.updateNews = async (req, res) => {
     const news = await News.findById(req.params.id);
     if (!news) return res.status(404).json({ success: false, message: "News not found" });
 
-    const { title, content, excerpt, category, tags, isPublished } = req.body;
+    const { title, content, excerpt, category, tags, isPublished,newsType  } = req.body;
 
-    if (title !== undefined)   news.title   = title.trim();
+    if (title !== undefined) news.title = title.trim();
     if (content !== undefined) news.content = content.trim();
     if (excerpt !== undefined) news.excerpt = excerpt.trim();
     if (category !== undefined) news.category = category;
-    if (tags !== undefined)    news.tags = Array.isArray(tags) ? tags : JSON.parse(tags);
+    if (newsType !== undefined) news.newsType = newsType;
+    if (tags !== undefined) news.tags = Array.isArray(tags) ? tags : JSON.parse(tags);
 
     if (isPublished !== undefined) {
       const publish = isPublished === "true" || isPublished === true;
       if (publish && !news.isPublished) news.publishedAt = new Date();
       news.isPublished = publish;
+    }
+
+    // Add this BEFORE res.json() in both create and update:
+    if (news.newsType === "main") {
+      await News.updateMany(
+        { newsType: "main", _id: { $ne: news._id } },
+        { $set: { newsType: "regular" } }
+      );
     }
 
     // Replace cover image if new file uploaded

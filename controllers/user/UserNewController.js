@@ -6,14 +6,12 @@ const News = require("../../models/News.model");
 ───────────────────────────────────────────────────────────── */
 exports.getPublicNews = async (req, res) => {
   try {
-    const page  = Math.max(Number(req.query.page)  || 1, 1);
-    const limit = Math.min(Number(req.query.limit) || 9, 30);
+    const page  = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.min(Number(req.query.limit) || 10, 10);
     const skip  = (page - 1) * limit;
 
     const query = { isPublished: true };
-
     if (req.query.category) query.category = req.query.category;
-
     if (req.query.search) {
       query.$or = [
         { title:   new RegExp(req.query.search, "i") },
@@ -22,19 +20,33 @@ exports.getPublicNews = async (req, res) => {
       ];
     }
 
+    // On page 1, no filters — fetch headline separately
+    const isFiltered = req.query.search || req.query.category;
+    const headline = (!isFiltered && page === 1)
+      ? await News.findOne({ isPublished: true, newsType: "main" })
+          .select("title excerpt category coverImage publishedAt tags viewCount newsType")
+          .lean()
+      : null;
+
+    // Exclude headline from regular list to avoid duplication
+    if (headline) query._id = { $ne: headline._id };
+
     const [news, total] = await Promise.all([
       News.find(query)
         .sort({ publishedAt: -1 })
         .skip(skip)
-        .limit(limit)
-        .select("title excerpt category coverImage publishedAt tags viewCount")
+        .limit(headline ? limit - 1 : limit) // one slot taken by headline
+        .select("title excerpt category coverImage publishedAt tags viewCount newsType")
         .lean(),
       News.countDocuments(query),
     ]);
 
+    // Inject headline at the top
+    const data = headline ? [headline, ...news] : news;
+
     res.json({
       success: true,
-      data: news,
+      data,
       pagination: { total, page, pages: Math.ceil(total / limit), limit },
     });
   } catch (err) {

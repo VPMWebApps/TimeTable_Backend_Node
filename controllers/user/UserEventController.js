@@ -55,6 +55,11 @@ const getFilteredEvents = async (req, res) => {
     /* ---------- DATE FILTER ---------- */
     const dateQuery = {};
 
+    // ADD THIS — handle "upcoming" and "all"
+    if (filter === "upcoming") {
+      dateQuery.$gte = today;
+    }
+
     if (filter === "next7") {
       const next7 = new Date(today);
       next7.setDate(today.getDate() + 7);
@@ -213,9 +218,9 @@ const getMyRegisteredEvents = async (req, res) => {
     if (!email)
       return res.status(401).json({ success: false, message: "Unauthorized" });
 
-    let page  = parseInt(req.query.page)  || 1;
+    let page = parseInt(req.query.page) || 1;
     let limit = parseInt(req.query.limit) || 5;
-    let skip  = (page - 1) * limit;
+    let skip = (page - 1) * limit;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -255,7 +260,7 @@ const getMyRegisteredEvents = async (req, res) => {
 
     // ── Step 4: NOW paginate the enriched upcoming list
     const totalUpcoming = enriched.length;
-    const paginated     = enriched.slice(skip, skip + limit);
+    const paginated = enriched.slice(skip, skip + limit);
 
     res.status(200).json({
       success: true,
@@ -270,9 +275,40 @@ const getMyRegisteredEvents = async (req, res) => {
   }
 };
 
+const getEventPage = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const limit = parseInt(req.query.limit) || 10;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Count how many events come before this one (same sort order as getFilteredEvents)
+    const event = await Event.findById(eventId);
+    if (!event) {
+      return res.status(404).json({ success: false, message: "Event not found" });
+    }
+
+    const position = await Event.countDocuments({
+      date: { $gte: today, $lt: event.date },
+    });
+
+    const page = Math.floor(position / limit) + 1;
+
+    res.status(200).json({ success: true, page });
+  } catch (err) {
+    console.error("❌ getEventPage:", err);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
 module.exports = {
   getFilteredEvents,
   getEventDetails,
   registerForEvent,
-  getMyRegisteredEvents, // 👈 add this
+  getMyRegisteredEvents,
+  getEventPage,
+
 };
+
+

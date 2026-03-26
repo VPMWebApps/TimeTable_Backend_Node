@@ -9,7 +9,7 @@ const { handleImageUploadUtil, uploadGalleryPhoto } = require("../../helpers/Clo
 exports.getApprovedAlbums = async (req, res) => {
   try {
     const page = Math.max(Number(req.query.page) || 1, 1);
-    const limit = Math.min(Number(req.query.limit) || 12, 30);
+    const limit = Math.min(Number(req.query.limit) || 21,21);
     const skip = (page - 1) * limit;
 
     const query = { status: "approved" };
