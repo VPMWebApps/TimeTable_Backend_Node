@@ -1,6 +1,5 @@
 const EventRegistration = require("../../models/RegisterEvent.js");
 const Event = require("../../models/Event.model.js");
-// const sendEventConfirmationMail = require("../../helpers/SendMail.js");
 
 const getFilteredEvents = async (req, res) => {
   try {
@@ -13,8 +12,6 @@ const getFilteredEvents = async (req, res) => {
       isVirtual,
       status,
     } = req.query;
-
-    console.log("🔍 Filter params received:", { filter, category, isVirtual, status });
 
     let page = parseInt(req.query.page) || 1;
     let limit = parseInt(req.query.limit) || 10;
@@ -35,27 +32,23 @@ const getFilteredEvents = async (req, res) => {
       query.category = new RegExp(`^${category}$`, "i");
     }
 
-    /* ---------- EVENT MODE (FIXED) ---------- */
+    /* ---------- EVENT MODE ---------- */
     if (isVirtual !== undefined && isVirtual !== "all") {
-      // Convert string to boolean properly
       if (isVirtual === "true" || isVirtual === true) {
         query.isVirtual = true;
-        console.log("✅ Filtering for VIRTUAL events");
       } else if (isVirtual === "false" || isVirtual === false) {
         query.isVirtual = false;
-        console.log("✅ Filtering for PHYSICAL events");
       }
     }
 
     /* ---------- STATUS ---------- */
     if (status && status !== "all") {
-      query.status = status; // must match enum exactly
+      query.status = status;
     }
 
     /* ---------- DATE FILTER ---------- */
     const dateQuery = {};
 
-    // ADD THIS — handle "upcoming" and "all"
     if (filter === "upcoming") {
       dateQuery.$gte = today;
     }
@@ -90,17 +83,15 @@ const getFilteredEvents = async (req, res) => {
       query.date = dateQuery;
     }
 
-    console.log("📊 Final MongoDB query:", JSON.stringify(query, null, 2));
-
     /* ---------- QUERY DB ---------- */
     const totalEvents = await Event.countDocuments(query);
 
+    // IMPORTANT: Sort by date ASC, then _id ASC as a stable tiebreaker.
+    // getEventPage uses the same sort — they must match exactly.
     const events = await Event.find(query)
-      .sort({ date: 1 })
+      .sort({ date: 1, _id: 1 })
       .skip(skip)
       .limit(limit);
-
-    console.log(`✅ Found ${events.length} events out of ${totalEvents} total`);
 
     res.status(200).json({
       success: true,
@@ -145,8 +136,6 @@ const getEventDetails = async (req, res) => {
 
 const registerForEvent = async (req, res) => {
   try {
-    console.log("📝 Registration request:", { eventId: req.params.eventId, body: req.body });
-
     const { eventId } = req.params;
     const { name, email } = req.body;
 
@@ -211,7 +200,6 @@ const registerForEvent = async (req, res) => {
   }
 };
 
-// ✅ Updated controller with pagination
 const getMyRegisteredEvents = async (req, res) => {
   try {
     const email = req.user?.email;
@@ -225,9 +213,6 @@ const getMyRegisteredEvents = async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // ── Step 1: Get ALL registration records for this user (no pagination yet)
-    // We need all of them so we can join with events and filter by date BEFORE paginating.
-    // Paginating registrations first and then filtering events causes wrong page sizes and counts.
     const allRegistrations = await EventRegistration.find({ email }).sort({
       registeredAt: -1,
     });
@@ -242,15 +227,13 @@ const getMyRegisteredEvents = async (req, res) => {
       });
     }
 
-    // ── Step 2: Fetch only UPCOMING events from those registrations
     const allEventIds = allRegistrations.map((r) => r.eventId);
 
     const upcomingEvents = await Event.find({
       _id: { $in: allEventIds },
-      date: { $gte: today }, // ← only upcoming events
-    }).sort({ date: 1 }); // soonest first
+      date: { $gte: today },
+    }).sort({ date: 1 });
 
-    // ── Step 3: Enrich each upcoming event with registeredAt from the registration record
     const enriched = upcomingEvents.map((event) => {
       const reg = allRegistrations.find(
         (r) => r.eventId.toString() === event._id.toString()
@@ -258,7 +241,6 @@ const getMyRegisteredEvents = async (req, res) => {
       return { ...event.toObject(), registeredAt: reg?.registeredAt };
     });
 
-    // ── Step 4: NOW paginate the enriched upcoming list
     const totalUpcoming = enriched.length;
     const paginated = enriched.slice(skip, skip + limit);
 
@@ -275,21 +257,34 @@ const getMyRegisteredEvents = async (req, res) => {
   }
 };
 
-// GET /events/:id/page
+// FIX: Added try/catch and uses same sort (date ASC, _id ASC) as getFilteredEvents
+// so the page number calculation is always consistent and deterministic.
 const getEventPage = async (req, res) => {
-  const { eventId } = req.params;
-  const limit = parseInt(req.query.limit) || 10;
+  try {
+    const { eventId } = req.params;
+    const limit = parseInt(req.query.limit) || 10;
 
-  const event = await Event.findById(eventId);
-  if (!event) return res.status(404).json({ success: false });
+    const event = await Event.findById(eventId);
+    if (!event) {
+      return res.status(404).json({ success: false, message: "Event not found" });
+    }
 
-  const index = await Event.countDocuments({
-    date: { $lt: event.date }
-  });
+    // Count how many events come BEFORE this one using the exact same sort:
+    // primary: date ASC, secondary: _id ASC (tiebreaker)
+    const index = await Event.countDocuments({
+      $or: [
+        { date: { $lt: event.date } },
+        { date: event.date, _id: { $lt: event._id } },
+      ],
+    });
 
-  const page = Math.ceil((index + 1) / limit);
+    const page = Math.ceil((index + 1) / limit);
 
-  res.json({ success: true, page });
+    res.json({ success: true, page });
+  } catch (err) {
+    console.error("❌ getEventPage error:", err);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
 };
 
 module.exports = {
@@ -298,7 +293,4 @@ module.exports = {
   registerForEvent,
   getMyRegisteredEvents,
   getEventPage,
-
 };
-
-
