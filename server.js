@@ -92,6 +92,7 @@ app.use("/api/user/info", UserInfoRoutes);
 app.use("/api/user/connect", ConnectionRoutes);
 app.use("/api/user/message", messageRoutes);
 app.use("/api/user/news", UserNewRoutes);
+app.use("/api/user/gallery", UserGalleryRoutes);
 app.use("/api/user/feedback", UserFeedbackRoutes);
 
 /* ----------------- SOCKET SETUP ----------------- */

@@ -275,31 +275,21 @@ const getMyRegisteredEvents = async (req, res) => {
   }
 };
 
+// GET /events/:id/page
 const getEventPage = async (req, res) => {
-  try {
-    const { eventId } = req.params;
-    const limit = parseInt(req.query.limit) || 10;
+  const { eventId } = req.params;
+  const limit = parseInt(req.query.limit) || 10;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+  const event = await Event.findById(eventId);
+  if (!event) return res.status(404).json({ success: false });
 
-    // Count how many events come before this one (same sort order as getFilteredEvents)
-    const event = await Event.findById(eventId);
-    if (!event) {
-      return res.status(404).json({ success: false, message: "Event not found" });
-    }
+  const index = await Event.countDocuments({
+    date: { $lt: event.date }
+  });
 
-    const position = await Event.countDocuments({
-      date: { $gte: today, $lt: event.date },
-    });
+  const page = Math.ceil((index + 1) / limit);
 
-    const page = Math.floor(position / limit) + 1;
-
-    res.status(200).json({ success: true, page });
-  } catch (err) {
-    console.error("❌ getEventPage:", err);
-    res.status(500).json({ success: false, message: "Internal server error" });
-  }
+  res.json({ success: true, page });
 };
 
 module.exports = {
