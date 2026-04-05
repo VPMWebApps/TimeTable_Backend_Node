@@ -184,25 +184,22 @@ exports.createJobAsAdmin = async (req, res) => {
   }
 };
 
+
 exports.getAdminJobApplications = async (req, res) => {
   try {
     if (req.user?.role !== "admin") {
       return res.status(403).json({ success: false, message: "Unauthorized" });
     }
 
-    const page  = Math.max(Number(req.query.page)  || 1,  1);
+    const page  = Math.max(Number(req.query.page)  || 1, 1);
     const limit = Math.min(Number(req.query.limit) || 10, 50);
     const skip  = (page - 1) * limit;
 
-    const [adminJobs, totalJobs] = await Promise.all([
-      Job.find({ "postedBy.userId": req.user._id, "postedBy.role": "admin" })
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .select("_id title companyName createdAt")
-        .lean(),
-      Job.countDocuments({ "postedBy.userId": req.user._id, "postedBy.role": "admin" }),
-    ]);
+    // All jobs posted by this admin
+    const adminJobs = await Job.find({ "postedBy.userId": req.user._id })
+      .select("_id title companyName createdAt")
+      .sort({ createdAt: -1 })
+      .lean();
 
     if (!adminJobs.length) {
       return res.json({
@@ -214,31 +211,52 @@ exports.getAdminJobApplications = async (req, res) => {
 
     const jobIds = adminJobs.map((j) => j._id);
 
+    const total = await Application.countDocuments({ job: { $in: jobIds } });
+
     const applications = await Application.find({ job: { $in: jobIds } })
-      .populate("applicant", "fullname email stream batch")
       .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate({ path: "applicant", select: "fullname email stream batch" })
+      .populate({ path: "job", select: "_id title companyName" })
       .lean();
 
-    const appsByJob = {};
-    for (const app of applications) {
-      const jid = app.job.toString();
-      if (!appsByJob[jid]) appsByJob[jid] = [];
-      appsByJob[jid].push(app);
-    }
+    // Group under each job
+    const jobMap = {};
+    adminJobs.forEach((job) => {
+      jobMap[job._id.toString()] = { ...job, applications: [] };
+    });
 
-    const data = adminJobs.map((job) => ({
-      ...job,
-      applications:      appsByJob[job._id.toString()] || [],
-      totalApplications: (appsByJob[job._id.toString()] || []).length,
-    }));
+    applications.forEach((app) => {
+      const key = app.job?._id?.toString();
+      if (key && jobMap[key]) jobMap[key].applications.push(app);
+    });
+
+    // Per-job badge counts
+    const countAgg = await Application.aggregate([
+      { $match: { job: { $in: jobIds } } },
+      { $group: { _id: "$job", count: { $sum: 1 } } },
+    ]);
+
+    const countMap = {};
+    countAgg.forEach((c) => { countMap[c._id.toString()] = c.count; });
+
+    const data = Object.values(jobMap)
+      .filter((j) => j.applications.length > 0)
+      .map((j) => ({
+        ...j,
+        totalApplications: countMap[j._id.toString()] || 0,
+      }));
 
     res.json({
       success: true,
       data,
-      pagination: { total: totalJobs, page, pages: Math.ceil(totalJobs / limit), limit },
+      pagination: { total, page, pages: Math.ceil(total / limit), limit },
     });
   } catch (err) {
-    console.error("ADMIN APPLICATIONS FETCH ERROR:", err);
-    res.status(500).json({ success: false, message: "Failed to fetch applications" });
+    res.status(500).json({
+      success: false,
+      message: err.message || "Failed to fetch applications",
+    });
   }
 };

@@ -38,15 +38,15 @@ async function uploadFileToCloudinary(fileBuffer, mimetype, originalname) {
     // AND enables Cloudinary's inline delivery (no auth required).
     const resourceType = mimetype.startsWith("image/") ? "image"
       : mimetype.startsWith("video/") ? "video"
-      : mimetype.startsWith("audio/") ? "video"
-      : mimetype === "application/pdf" ? "image"  // ← PDFs use "image", not "raw"
-      : "raw";
+        : mimetype.startsWith("audio/") ? "video"
+          : mimetype === "application/pdf" ? "image"  // ← PDFs use "image", not "raw"
+            : "raw";
 
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder: "resumes",
         resource_type: resourceType,
-        public_id: `${Date.now()}_${originalname.replace(/\s+/g, "_")}`,
+        public_id: `${Date.now()}_${originalname.replace(/\s+/g, "_").replace(/\.[^/.]+$/, "")}`,
         flags: "attachment:false", // serve inline
       },
       (error, result) => {

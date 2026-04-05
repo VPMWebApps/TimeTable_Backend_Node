@@ -9,6 +9,7 @@ const {
   getAcceptedConnections,
   getIncomingRequests,
   getOutgoingRequests,
+  withdrawConnection,
 } = require("../../controllers/user/ConnectonController");
 
 const { authMiddleware } = require("../../controllers/auth/authController");
@@ -37,5 +38,6 @@ router.get("/incoming", getIncomingRequests);
 router.get("/outgoing", getOutgoingRequests);
 
 
+router.delete("/:connectionId/withdraw",  withdrawConnection);
 
 module.exports = router;

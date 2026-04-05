@@ -308,3 +308,38 @@ exports.getOutgoingRequests = async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 };
+
+// ─── Withdraw (cancel) outgoing pending request ────────────────────────────────
+exports.withdrawConnection = async (req, res) => {
+  try {
+    const io = req.app.get("io");
+    const userId = req.user.id;
+    const { connectionId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(connectionId)) {
+      return res.status(400).json({ message: "Invalid connection ID" });
+    }
+
+    const deleted = await Connection.findOneAndDelete({
+      _id: connectionId,
+      requester: userId,
+      status: "PENDING",
+    });
+
+    if (!deleted) {
+      return res.status(400).json({ message: "Cannot withdraw this request" });
+    }
+
+    // Notify the recipient in real-time so their incoming list updates instantly
+    emitToUser(io, deleted.recipient, "connection:withdrawn", {
+      connectionId: deleted._id,
+      by: userId,
+    });
+
+    return res.json({ message: "Connection request withdrawn" });
+
+  } catch (err) {
+    console.error("Withdraw Connection Error:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
