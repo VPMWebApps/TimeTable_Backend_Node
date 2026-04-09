@@ -37,18 +37,18 @@ async function uploadFileToCloudinary(fileBuffer, mimetype, originalname) {
     // "image" resource_type makes PDFs publicly accessible via their URL
     // AND enables Cloudinary's inline delivery (no auth required).
     const resourceType = mimetype.startsWith("image/") ? "image"
-      : mimetype.startsWith("video/") ? "video"
-        : mimetype.startsWith("audio/") ? "video"
-          : mimetype === "application/pdf" ? "image"  // ← PDFs use "image", not "raw"
-            : "raw";
+  : mimetype.startsWith("video/") ? "video"
+  : mimetype.startsWith("audio/") ? "video"
+  : mimetype === "application/pdf" ? "raw"  // ← back to raw
+  : "raw";
 
     const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder: "resumes",
-        resource_type: resourceType,
-        public_id: `${Date.now()}_${originalname.replace(/\s+/g, "_").replace(/\.[^/.]+$/, "")}`,
-        flags: "attachment:false", // serve inline
-      },
+       {
+    folder: "resumes",
+    resource_type: resourceType,
+    access_mode: "public",  // ← explicitly public
+    public_id: `${Date.now()}_${originalname.replace(/\s+/g, "_").replace(/\.[^/.]+$/, "")}`,
+  },
       (error, result) => {
         if (error) reject(error);
         else resolve(result);
