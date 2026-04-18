@@ -24,8 +24,6 @@ const AdminFeedbackRoutes = require("./routes/adminRoutes/AdminFeedbackRoutes")
 const UserFeedbackRoutes = require("./routes/UserRoutes/UserFeedbackRoutes");
 
 
-
-
 const { initSocket } = require("./socket");
 
 dotenv.config();
